@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { Pip } from '@/components/Pip';
 import {
   ChatBubble,
   Composer,
@@ -39,6 +40,13 @@ export default function DesignShowcase() {
     <SignalScreen>
       <SignalHeader onBack={() => {}} />
       <LocationBlock room="Conference Room 204" building="JFK27 · Floor 2" />
+
+      <Section title="Pip states" />
+      <GlassCard style={styles.pips}>
+        {(['idle', 'listening', 'thinking', 'helping', 'solved', 'escalating'] as const).map((s) => (
+          <Pip key={s} state={s} size={52} />
+        ))}
+      </GlassCard>
 
       <Section title="Typography" />
       <GlassCard style={styles.gap}>
@@ -133,6 +141,7 @@ function Section({ title }: { title: string }) {
 
 const styles = StyleSheet.create({
   gap: { gap: 8 },
+  pips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', gap: 16 },
   section: { marginTop: 16, letterSpacing: 1.2 },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   swatchItem: { alignItems: 'center', gap: 4 },

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Pip } from '@/components/Pip';
@@ -48,6 +48,9 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [pip, setPip] = useState<PipState>('idle');
+  const [bandW, setBandW] = useState(0);
+  // Horizontal range = half the band minus Pip's width; vertical is tiny. Stable object so Pip's roam effect doesn't restart.
+  const bandRoam = useMemo(() => ({ x: Math.max(0, bandW / 2 - 36), y: 4 }), [bandW]);
   const [sound, setSound] = useState(false);
   const soundRef = useRef(sound);
   soundRef.current = sound;
@@ -187,7 +190,11 @@ export default function Chat() {
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
-        <Pip state={pip} size={40} />
+        {/* Roaming band: Pip drifts only inside this strip above the title, never over the message list. */}
+        <View style={styles.pipBand} onLayout={(e) => setBandW(e.nativeEvent.layout.width)}>
+          <Pip state={pip} size={34} roam={bandRoam} />
+        </View>
+        <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
           <Text style={text.h2}>{DEMO_LOCATION.name}</Text>
           <Badge label="DEMO / NFC simulation" tone="warn" />
@@ -200,6 +207,7 @@ export default function Chat() {
           style={styles.toggle}>
           <Text style={text.muted}>{sound ? '🔊 Sound on' : '🔈 Sound off'}</Text>
         </Pressable>
+        </View>
       </View>
       <FlatList
         data={items}
@@ -320,7 +328,9 @@ function ActionCard({ attempt }: { attempt: Attempt }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper, width: '100%', maxWidth: 640, alignSelf: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderBottomWidth: 1, borderBottomColor: colors.line },
+  header: { gap: space.xs, padding: space.md, borderBottomWidth: 1, borderBottomColor: colors.line },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  pipBand: { height: 70, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   notice: { color: colors.alert, fontSize: 13, lineHeight: 18 },
   link: { minHeight: 36, justifyContent: 'center', paddingHorizontal: space.sm },
   linkText: { color: colors.ink, fontWeight: '700', textDecorationLine: 'underline' },

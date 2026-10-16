@@ -129,6 +129,13 @@ All exported from `@/design`.
 - Use normal flow with flexible spacing, never a fixed phone height. Account for the keyboard with sticky composers.
 - The avatar uses the already-selected open-source component; reserve adaptable space, don't style it here.
 
+## 7b. Pip (mascot)
+
+`src/components/Pip.tsx` is an original renderer (no Avatar Lab / AGPL code, no new dependencies; plain Views +
+`Animated`, so it runs on web and native). Face data per state is a small table (`POSE`: eye openness, pupil offset,
+mouth). Ambient: 3px float, random blink, pupil darting while thinking, spark pulse, hop when solved; all loops stop
+under reduce-motion. See all six states on `/styleguide`.
+
 ## 8. Motion
 
 Press 120–160ms (scale + fill). Card reveal 200–240ms (fade + ≤6px rise). Status crossfade 160–200ms. Screen
