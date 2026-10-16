@@ -30,7 +30,8 @@
         "portalUrl": null,
         "hours": "Mon–Fri 8:00–18:00"
       },
-      "nfcTags": []
+      "nfcTags": [],
+      "access": "nfc"
     },
     {
       "id": "room204",
@@ -47,7 +48,8 @@
         { "q": "I can't connect to the Wi-Fi", "a": "Make sure you joined the named guest network, not a nearby one." }
       ],
       "escalation": { "urgentPhone": null, "urgentLabel": null, "email": "facilities@signal-demo.example", "portal": "signal_demo", "portalUrl": null, "hours": null },
-      "nfcTags": []
+      "nfcTags": [],
+      "access": "open"
     }
   ],
   "pastReports": [

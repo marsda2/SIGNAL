@@ -8,7 +8,7 @@ import { colors, radius, space } from '@/constants/tokens';
 type Asset = { id: string; type: string; name: string; model?: string; safeTroubleshooting: string[] };
 type Faq = { q: string; a: string };
 type Escalation = { urgentPhone: string | null; urgentLabel?: string | null; email: string | null; portal: 'signal_demo' | 'external' | 'none'; portalUrl: string | null; hours?: string | null };
-type Space = { id: string; name: string; siteName: string; description: string; timezone: string; assets: Asset[]; faqs: Faq[]; escalation: Escalation; nfcTags: string[]; updatedAt?: string };
+type Space = { id: string; name: string; siteName: string; description: string; timezone: string; assets: Asset[]; faqs: Faq[]; escalation: Escalation; nfcTags: string[]; access?: 'nfc' | 'open'; updatedAt?: string };
 
 const ASSET_TYPES = ['projector', 'laptop', 'wifi', 'lock', 'display', 'printer', 'hvac', 'other'];
 const SECRET_KEY = 'signal.operatorSecret';
@@ -23,6 +23,7 @@ const blank = (): Space => ({
   faqs: [],
   escalation: { urgentPhone: null, urgentLabel: null, email: null, portal: 'signal_demo', portalUrl: null, hours: null },
   nfcTags: [],
+  access: 'nfc',
 });
 
 function readSecret() {
@@ -224,6 +225,20 @@ export default function SpacesAdmin() {
             <Text style={text.muted}>
               One chip UID per line (14 hex, from `npm run nfc:check`). A verified tap on any of these opens this space. NFC_TAGS in the server env still takes priority.
             </Text>
+            <Text style={text.muted}>Who can open this space’s helper</Text>
+            <View style={styles.row}>
+              {(
+                [
+                  ['nfc', 'Only from a verified chip tap'],
+                  ['open', 'Anyone with the link'],
+                ] as const
+              ).map(([v, label]) => (
+                <Pressable key={v} accessibilityRole="radio" accessibilityState={{ selected: (draft.access ?? 'open') === v }} onPress={() => set('access', v)} style={[styles.pill, (draft.access ?? 'open') === v && styles.chipOn]}>
+                  <Text>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {draft.access === 'nfc' && <Text style={text.mono}>Operators with the secret in this tab can still preview the chat (“Operator preview”).</Text>}
             <Field label="Chip UIDs" value={draft.nfcTags.join('\n')} multiline autoCapitalize="characters" onChangeText={(v) => set('nfcTags', v.split('\n').map((s) => s.trim()).filter(Boolean))} placeholder="04DE5F1EACC040" />
             <View style={styles.row}>
               {draft.nfcTags.map((t) => (

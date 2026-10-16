@@ -1,3 +1,4 @@
+import { denied, visitorAccess } from '@/lib/access';
 import { getSpace, saveSpace } from '@/lib/core';
 import { integrationConfig, isOperator } from '@/lib/env';
 import { rememberSpaceProfile } from '@/lib/memory';
@@ -5,9 +6,13 @@ import { publicSpace, SpaceSchema } from '@/lib/spaces';
 
 /** GET /api/spaces/:id — public view for visitors; full profile with the operator header. */
 export async function GET(request: Request, { id }: { id: string }) {
-  const space = await getSpace(id).catch(() => undefined);
-  if (!space) return Response.json({ error: 'not_found' }, { status: 404 });
-  return Response.json({ space: isOperator(request) ? space : publicSpace(space) });
+  if (isOperator(request)) {
+    const space = await getSpace(id).catch(() => undefined);
+    return space ? Response.json({ space }) : Response.json({ error: 'not_found' }, { status: 404 });
+  }
+  const access = await visitorAccess(request, id);
+  if (!access.ok) return denied(access);
+  return Response.json({ space: publicSpace(access.space) });
 }
 
 /** PUT /api/spaces/:id — operator-only upsert. Core is authoritative; Agent Memory gets a new profile fact (supersession, no forget). */

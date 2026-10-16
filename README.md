@@ -47,7 +47,7 @@ Try: "the right projector keeps going black", "the door keypad won't take the co
 | SurrealDB Core: incidents, action attempts, audit, `/api/demo/reset` | Wired. **Running on the labelled `local` store**: not durable, and not shared between Vercel instances | `SURREALDB_URL/USERNAME/PASSWORD` |
 | `/demo/maintenance` portal | Reads/writes Core; status chips + note + "Save update" | — |
 | Anchor portal update + read-back verification | Wired, never run live | Durable Core, `ENABLE_ANCHOR_ACTIONS=true`, deploy |
-| NFC chip (NTAG 424 DNA) | **Chip written** with SIGNAL dataset. Verifier + `POST /api/tap/redeem` + `nfc:check` exist and are unit-tested. Chip UIDs can now be linked to a space in `/admin/spaces` (env `NFC_TAGS` still wins); `/api/chat` trusts the signed session's location | Phone test; `/t` still shows the simulation screen (not calling `redeem` yet) |
+| NFC chip (NTAG 424 DNA) | **Chip written** with SIGNAL dataset. Verifier + `POST /api/tap/redeem` + `nfc:check` exist and are unit-tested. Chip UIDs can now be linked to a space in `/admin/spaces` (env `NFC_TAGS` still wins); `/api/chat` trusts the signed session's location | `/t` now redeems the tap; Pitch Area is **NFC-only** (verified tap session required, checked server-side on every visitor API). Needs `NFC_MODE=verified` + the chip UID linked on Vercel, then a phone test |
 | ElevenLabs cues | Generator script + chat playback with captions. **No audio generated** | API key needs `text_to_speech` permission |
 | Phoenix traces | Spans for chat / recall / LLM / policy / tools | `PHOENIX_COLLECTOR_ENDPOINT` + `PHOENIX_API_KEY` |
 | Daytona | **Live:** `npm run daytona:smoke` → fresh sandbox, `npm ci`, typecheck, NFC tests all pass | — |
@@ -68,7 +68,7 @@ Rule: only show behaviour that actually runs. Seeded/simulated data is labelled.
    1. TagWriter → Read tags twice → `e`/`c` must change.
    2. `npm run nfc:check -- "<url from the chip>"` → note the `uid`.
    3. Paste the UID into **`/admin/spaces` → Pitch Area → NFC chips** (or set `NFC_TAGS=<UID>=pitch_area`), and set `NFC_MODE=verified` in `.env.local` + Vercel. Redeploy.
-   4. Wire `src/app/t.tsx` to `useTapRedeem` (exact code in `docs/10_NFC_SETUP.md` §4) and pass `r.sessionToken` as the chat's `session` param — chat already resolves it via `/api/spaces/resolve` and `/api/chat` already trusts its location.
+   4. ✅ Done in code: `/t` redeems on **Continue**, keeps the signed session in this tab's `sessionStorage` (never in the URL) and opens `/s/<space>`. The Pitch Area has `access: "nfc"`, so chat, FAQ presets, reports, Anchor actions and feedback return **401 "tap the chip"** without that session (operators with the secret get "Operator preview").
    5. Tap with the phone → should land in chat with "Secure NFC scan checked". Tap again with the old URL → `replayed`.
 5. **Anchor live run on Vercel.** Set `ENABLE_ANCHOR_ACTIONS=true`, run S1 to step 4, watch the live view, confirm VERIFIED + evidence. If the agent struggles with the RN-web form, adjust the prompt in `src/lib/anchor.ts` (not the success logic).
 

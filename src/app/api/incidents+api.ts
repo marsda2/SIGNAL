@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { denied, visitorAccess } from '@/lib/access';
 import { verifyActionId } from '@/lib/approvals';
 import { audit, coreBackend, createIncident, toView } from '@/lib/core';
 import { integrationConfig } from '@/lib/env';
@@ -18,6 +19,8 @@ export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'invalid_body' }, { status: 400 });
   const { actionId, locationId, summary, assetId = null } = parsed.data;
+  const access = await visitorAccess(request, locationId);
+  if (!access.ok) return denied(access);
   if (!verifyActionId(actionId, 'CREATE_INCIDENT', locationId, 'new')) {
     await audit({ kind: 'incident.create.rejected', actor: 'visitor', subject: locationId, detail: 'invalid or expired approval' });
     return Response.json({ error: 'approval_invalid' }, { status: 403 });

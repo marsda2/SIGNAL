@@ -41,6 +41,7 @@ export const SpaceSchema = z.object({
     hours: z.string().trim().max(80).nullable().optional(),
   }),
   nfcTags: z.array(z.string().trim().regex(/^[0-9a-fA-F]{14}$/, '7-byte chip UID (14 hex)')).max(20),
+  access: z.enum(['nfc', 'open']).default('open'),
 });
 
 export function publicSpace(s: Space): PublicSpace {
@@ -51,5 +52,6 @@ export function publicSpace(s: Space): PublicSpace {
     description: s.description,
     assets: s.assets.map((a) => ({ id: a.id, type: a.type, name: a.name })),
     hasUrgentLine: Boolean(s.escalation.urgentPhone),
+    access: s.access ?? 'open',
   };
 }

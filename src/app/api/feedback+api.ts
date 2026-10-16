@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { denied, visitorAccess } from '@/lib/access';
 import { audit } from '@/lib/core';
 import { integrationConfig } from '@/lib/env';
 import { locationLabel, memory } from '@/lib/memory';
@@ -15,6 +16,8 @@ export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'invalid_body' }, { status: 400 });
   const { locationId, problem, fix } = parsed.data;
+  const access = await visitorAccess(request, locationId);
+  if (!access.ok) return denied(access);
   await audit({ kind: 'visitor.self_resolved', actor: 'visitor', subject: locationId, detail: problem });
   if (!integrationConfig().agentMemory) return Response.json({ remembered: false, reason: 'memory_not_configured' });
   try {

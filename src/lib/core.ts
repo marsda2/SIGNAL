@@ -81,6 +81,8 @@ export type Space = {
   faqs: SpaceFaq[];
   escalation: SpaceEscalation;
   nfcTags: string[];
+  /** nfc = visitor APIs only work with a session from a verified chip tap; open = anyone with the link. */
+  access?: 'nfc' | 'open';
   updatedAt?: string;
 };
 

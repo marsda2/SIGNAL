@@ -7,6 +7,7 @@ import { Badge, Card, text } from '@/components/ui';
 import { ChatBubble, Composer, EscalationCard, StatusMark, type StatusKind } from '@/design';
 import type { ChatEvent, CueName, EscalationOption, FaqPreset, IncidentView, PipState, PublicSpace } from '@/lib/agent/contracts';
 import { colors, DEMO_LOCATION, space } from '@/constants/tokens';
+import { visitorHeaders } from '@/lib/visitor-session';
 
 type Approval = Extract<ChatEvent, { type: 'approval' }>;
 type Attempt = { key: string; state: string; liveViewUrl?: string | null; evidence?: string | null; error?: string | null; incidentKey: string };
@@ -52,26 +53,32 @@ export default function Chat() {
   const [spaceError, setSpaceError] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
   const [presets, setPresets] = useState<FaqPreset[]>([]);
-  const sessionToken = useRef<string | undefined>(undefined);
+  /** Set when the space only opens from a verified chip tap and this tab has no valid tap session. */
+  const [locked, setLocked] = useState<string | null>(null);
+  const [via, setVia] = useState<'nfc' | 'open' | 'operator' | null>(null);
   const spaceId = room?.id ?? DEMO_LOCATION.id;
   const [items, setItems] = useState<Item[]>([
     { id: GREETING_ID, kind: 'pip', text: 'Hey there! I’m Pip. Need a hand with something here?' },
   ]);
 
-  // Which space is this chat for? A signed NFC session token, a space id (/s/pitch_area) or "demo".
+  // Which space is this chat for? The tab's tap session (header) decides; otherwise the space id in the URL or "demo".
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/spaces/resolve?ref=${encodeURIComponent(String(ref ?? 'demo'))}`);
-        const json = (await res.json()) as { space?: PublicSpace; verified?: boolean; sessionToken?: string; error?: string };
-        if (!res.ok || !json.space) throw new Error(json.error ?? `HTTP ${res.status}`);
+        const res = await fetch(`/api/spaces/resolve?ref=${encodeURIComponent(String(ref ?? 'demo'))}`, { headers: visitorHeaders() });
+        const json = (await res.json()) as { space?: PublicSpace; verified?: boolean; via?: 'nfc' | 'open' | 'operator'; error?: string; message?: string; spaceName?: string };
         if (cancelled) return;
+        if (res.status === 401 && json.error === 'nfc_required') {
+          setLocked(json.spaceName ?? 'this space');
+          return;
+        }
+        if (!res.ok || !json.space) throw new Error(json.message ?? json.error ?? `HTTP ${res.status}`);
         setRoom(json.space);
         setVerified(Boolean(json.verified));
-        sessionToken.current = json.sessionToken;
+        setVia(json.via ?? null);
         setItems((prev) => prev.map((i) => (i.id === GREETING_ID ? { ...i, text: `Hey there! I’m Pip. Need a hand with something in ${json.space!.name}?` } : i)));
-        const faq = await fetch(`/api/spaces/${encodeURIComponent(json.space.id)}/faq`).then((r) => r.json() as Promise<{ presets?: FaqPreset[] }>);
+        const faq = await fetch(`/api/spaces/${encodeURIComponent(json.space.id)}/faq`, { headers: visitorHeaders() }).then((r) => r.json() as Promise<{ presets?: FaqPreset[] }>);
         if (!cancelled) setPresets(faq.presets ?? []);
       } catch (e) {
         if (!cancelled) setSpaceError(e instanceof Error ? e.message : String(e));
@@ -118,8 +125,8 @@ export default function Chat() {
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, locationId: spaceId, sessionToken: sessionToken.current, history: history() }),
+        headers: visitorHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ message, locationId: spaceId, history: history() }),
       });
       if (!res.ok) throw new Error(`Chat failed (${res.status})`);
       const { events } = (await res.json()) as { events: ChatEvent[] };
@@ -158,7 +165,7 @@ export default function Chat() {
     try {
       await fetch('/api/feedback', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: visitorHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ locationId: spaceId, problem: lastProblem.current || 'unspecified', fix: item.text.slice(0, 600) }),
       });
     } catch {
@@ -173,7 +180,7 @@ export default function Chat() {
       if (a.kind === 'CREATE_INCIDENT') {
         const res = await fetch('/api/incidents', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: visitorHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ actionId: a.actionId, locationId: spaceId, summary: a.summary ?? lastProblem.current, assetId: a.assetId ?? null }),
         });
         const json = (await res.json()) as { incident?: IncidentView; error?: string; memoryNote?: string; backend?: string };
@@ -186,7 +193,7 @@ export default function Chat() {
       } else {
         const res = await fetch('/api/actions/portal-update', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: visitorHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ actionId: a.actionId, locationId: spaceId, incidentKey: a.incidentKey, summary: a.summary ?? lastProblem.current }),
         });
         const json = (await res.json()) as { attempt?: Attempt; error?: string; message?: string };
@@ -205,7 +212,7 @@ export default function Chat() {
   function poll(itemId: string, attemptKey: string) {
     const tick = async () => {
       try {
-        const res = await fetch(`/api/actions/${encodeURIComponent(attemptKey)}`);
+        const res = await fetch(`/api/actions/${encodeURIComponent(attemptKey)}`, { headers: visitorHeaders() });
         const json = (await res.json()) as { attempt?: Attempt; incident?: IncidentView | null };
         if (json.attempt) {
           patch(itemId, (i) => ({ ...i, attempt: json.attempt! }) as Item);
@@ -225,6 +232,19 @@ export default function Chat() {
     setTimeout(tick, 3000);
   }
 
+  if (locked) {
+    return (
+      <View style={[styles.root, { justifyContent: 'center', padding: space.lg, gap: space.md }]}>
+        <Card>
+          <Badge label="NFC tap required" tone="warn" />
+          <Text style={text.h2}>Tap the SIGNAL chip in {locked}</Text>
+          <Text style={text.body}>This helper only opens from a tap on the chip in this space. Hold your phone near the tag to start.</Text>
+          <Text style={text.muted}>Already tapped? Your tap session lasts 30 minutes — tap again for a fresh one.</Text>
+        </Card>
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
@@ -235,7 +255,10 @@ export default function Chat() {
         <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
           <Text style={text.h2}>{room?.name ?? (spaceError ? 'Unknown space' : 'Loading…')}</Text>
-          <Badge label={verified ? 'Secure NFC scan checked' : 'DEMO / NFC simulation'} tone={verified ? 'ok' : 'warn'} />
+          <Badge
+            label={verified ? 'Secure NFC scan checked' : via === 'operator' ? 'Operator preview (no tap)' : 'DEMO / NFC simulation'}
+            tone={verified ? 'ok' : 'warn'}
+          />
           {spaceError ? <Text style={styles.notice}>Could not load this space: {spaceError}</Text> : null}
         </View>
         <Pressable

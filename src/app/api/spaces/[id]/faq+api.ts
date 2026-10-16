@@ -1,6 +1,7 @@
 import type { FaqPreset } from '@/lib/agent/contracts';
 import { ago } from '@/lib/agent/space-context';
-import { getSpace, listIncidents, type Space } from '@/lib/core';
+import { denied, visitorAccess } from '@/lib/access';
+import { listIncidents, type Space } from '@/lib/core';
 import { integrationConfig } from '@/lib/env';
 import { recallForLocation } from '@/lib/memory';
 
@@ -44,9 +45,10 @@ async function memoryTopics(space: Space): Promise<Map<string, Topic> | null> {
  * GET /api/spaces/:id/faq — preset questions for the chat: frequent issues (Agent Memory, falling back to Core
  * reports from the last 30 days) followed by the operator's FAQs.
  */
-export async function GET(_request: Request, { id }: { id: string }) {
-  const space = await getSpace(id).catch(() => undefined);
-  if (!space) return Response.json({ error: 'not_found' }, { status: 404 });
+export async function GET(request: Request, { id }: { id: string }) {
+  const access = await visitorAccess(request, id);
+  if (!access.ok) return denied(access);
+  const space = access.space;
 
   let source: FaqPreset['source'] = 'memory';
   let topics = await memoryTopics(space);

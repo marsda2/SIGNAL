@@ -1,3 +1,4 @@
+import { denied, visitorAccess } from '@/lib/access';
 import { endSession, workflowStatus } from '@/lib/anchor';
 import { getAttempt, getIncident, toView, updateAttempt, type ActionAttempt } from '@/lib/core';
 import { flushTraces, withSpan } from '@/lib/tracing';
@@ -9,9 +10,11 @@ const terminal = (a: ActionAttempt) => a.state === 'VERIFIED' || a.state === 'FA
  * GET /api/actions/:id — poll an action. Read-after-write: VERIFIED only when Core shows the ticket with the
  * requested status AND a note carrying this attempt's reference. The agent's own "done" is never trusted.
  */
-export async function GET(_request: Request, { id }: { id: string }) {
+export async function GET(request: Request, { id }: { id: string }) {
   let attempt = await getAttempt(id);
   if (!attempt) return Response.json({ error: 'not_found' }, { status: 404 });
+  const access = await visitorAccess(request, attempt.locationId);
+  if (!access.ok) return denied(access);
 
   if (!terminal(attempt)) {
     attempt = await withSpan('verify.portal_readback', 'TOOL', { 'tool.name': 'portal_readback', 'signal.attempt': id }, async (span) => {

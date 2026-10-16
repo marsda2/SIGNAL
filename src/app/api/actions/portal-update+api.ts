@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
+import { denied, visitorAccess } from '@/lib/access';
 import { startPortalUpdate } from '@/lib/anchor';
 import { verifyActionId } from '@/lib/approvals';
 import { audit, createAttempt, getIncident, inFlightAttempt, updateAttempt } from '@/lib/core';
@@ -23,6 +24,8 @@ export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'invalid_body' }, { status: 400 });
   const { actionId, locationId, incidentKey, summary } = parsed.data;
+  const access = await visitorAccess(request, locationId);
+  if (!access.ok) return denied(access);
 
   if (!verifyActionId(actionId, 'UPDATE_PORTAL', locationId, incidentKey)) {
     await audit({ kind: 'action.portal_update.rejected', actor: 'visitor', subject: incidentKey, detail: 'invalid or expired approval' });

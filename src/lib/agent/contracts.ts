@@ -121,6 +121,7 @@ export type PublicSpace = {
   description: string;
   assets: { id: string; type: string; name: string }[];
   hasUrgentLine: boolean;
+  access: 'nfc' | 'open';
 };
 
 export type FaqPreset = { label: string; message: string; source: 'faq' | 'memory' | 'reports'; detail?: string };

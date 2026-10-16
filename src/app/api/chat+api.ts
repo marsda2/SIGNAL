@@ -5,17 +5,15 @@ import { authorizeProposedAction, DecisionSchema, type AgentDecision, type ChatE
 import { chatModel, chatProviderOptions, modelId } from '@/lib/agent/model';
 import { escalationOptions, findSimilar, matchFaq, spacePromptBlocks, type SimilarReport } from '@/lib/agent/space-context';
 import { issueActionId } from '@/lib/approvals';
-import { audit, coreBackend, getSpace, listIncidents, toView, type Incident, type Space } from '@/lib/core';
+import { denied, sessionFrom, visitorAccess } from '@/lib/access';
+import { audit, coreBackend, listIncidents, toView, type Incident, type Space } from '@/lib/core';
 import { flags, integrationConfig } from '@/lib/env';
 import { recallForLocation, type RecalledFact } from '@/lib/memory';
-import { readSession } from '@/lib/nfc/session';
 import { flushTraces, traceIdOf, withSpan } from '@/lib/tracing';
 
 const Body = z.object({
   message: z.string().min(1).max(1000),
   locationId: z.string().min(1).max(64),
-  /** Signed NFC session (POST /api/tap/redeem). When valid, its location wins over `locationId`. */
-  sessionToken: z.string().max(2000).optional(),
   history: z
     .array(z.object({ role: z.enum(['visitor', 'pip']), text: z.string().max(1500) }))
     .max(12)
@@ -53,26 +51,18 @@ function incidentBlock(incidents: Incident[]) {
 export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'invalid_body' }, { status: 400 });
-  const { message, history = [], sessionToken } = parsed.data;
-  const session = sessionToken ? readSession(sessionToken) : null;
+  const { message, history = [] } = parsed.data;
+  // A signed NFC session (header x-signal-session) decides the location; NFC-only spaces refuse requests without one.
+  const session = sessionFrom(request);
   const locationId = session?.loc ?? parsed.data.locationId;
+  const access = await visitorAccess(request, locationId);
+  if (!access.ok) return denied(access);
+  const sp: Space = access.space;
 
-  const events = await withSpan('chat.turn', 'CHAIN', { 'input.value': message, 'signal.location': locationId, 'signal.nfc_verified': Boolean(session?.verified) }, async (root) => {
+  const events = await withSpan('chat.turn', 'CHAIN', { 'input.value': message, 'signal.location': locationId, 'signal.access': access.via }, async (root) => {
     const events: ChatEvent[] = [];
     const traceId = traceIdOf(root);
     const configured = integrationConfig();
-
-    let space: Space | undefined;
-    try {
-      space = await getSpace(locationId);
-    } catch (e) {
-      events.push({ type: 'notice', code: 'core_unavailable', message: `Space database unreachable: ${e instanceof Error ? e.message : String(e)}` });
-    }
-    if (!space) {
-      events.push({ type: 'notice', code: 'core_unavailable', message: `No space profile for "${locationId}". An operator can add it in /admin/spaces.` }, { type: 'completed', outcome: 'unknown_space', traceId });
-      return events;
-    }
-    const sp = space;
 
     const pushEscalation = (reason: string, urgent: boolean, incidentKey?: string) => {
       if (events.some((e) => e.type === 'escalation')) return;
