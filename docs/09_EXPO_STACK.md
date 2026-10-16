@@ -11,7 +11,7 @@ The playbook (docs/01–08) specifies Next.js App Router. We build on **Expo Rou
 | `app/admin/page.tsx` | `src/app/admin.tsx` |
 | `app/demo/maintenance/page.tsx` | `src/app/demo/maintenance.tsx` |
 | `app/api/chat/route.ts` | `src/app/api/chat+api.ts` |
-| `app/api/tap/redeem/route.ts` | `src/app/api/tap/redeem+api.ts` (todo) |
+| `app/api/tap/redeem/route.ts` | `src/app/api/tap/redeem+api.ts` (done, see docs/10_NFC_SETUP.md) |
 | `export const runtime = 'nodejs'` | default — the Vercel adapter runs the Node.js runtime |
 | `process.env` in route handlers | same; Expo CLI loads `.env.local` for server routes in dev |
 | Tailwind | RN `StyleSheet` + tokens in `src/constants/tokens.ts` |
