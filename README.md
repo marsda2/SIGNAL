@@ -1,169 +1,261 @@
 # SIGNAL — Every space has a memory.
 
-> **Tap. Ask. Resolve.** A contextual AI assistant for physical spaces. A visitor taps an NFC tag, chats with the Pip mascot, gets source-aware troubleshooting backed by time-aware memory, and — with approval — a ticket is opened or updated in the maintenance portal.
+**Tap. Ask. Resolve.** SIGNAL gives a physical space a contextual assistant named **Pip**. A visitor taps an NFC chip, gets help grounded in the room’s instructions and previous reports, and approves any action that files or escalates a report. The visitor does not need to find the maintenance team’s phone number, email address, or reporting form.
 
-Hackathon build. Target prizes: **SurrealDB Agent Memory**, **Anchor Browser**, **Daytona**.
-Full spec lives in [`docs/`](docs/) (start with [`docs/playbook/ORIGINAL_README.md`](docs/playbook/ORIGINAL_README.md), [`docs/09_EXPO_STACK.md`](docs/09_EXPO_STACK.md), NFC in [`docs/10_NFC_SETUP.md`](docs/10_NFC_SETUP.md)).
+Hackathon focus: **SurrealDB Agent Memory**, **Anchor Browser**, and **Daytona**.
 
-## Where we are (2026-10-16)
+- [Live app](https://signal-three-iota.vercel.app)
+- [Maintenance desk: projector ticket P-202](https://signal-three-iota.vercel.app/demo/maintenance?ticket=P-202)
+- [Integration health](https://signal-three-iota.vercel.app/api/health)
+- [Phone demo script](docs/12_PHONE_DEMO.md)
 
-**Phase: integration done, verification pending.** Every integration has code: chat with Gemini, memory, incident database, Anchor, voice cues, tracing and Daytona. Typecheck, the production build and the Daytona sandbox run pass. Several pieces are blocked on **credentials or a live test, not on code**. The NFC chip is written with the SIGNAL dataset; the phone → `/t` → chat path is the next thing to prove.
+This README describes the implementation and observed status on **October 16, 2026**. Configuration flags show what is enabled; they do not prove that an external action succeeded. Seeded incident history is synthetic and labelled as demo data.
 
-Demo story — the **Pitch Area** (default demo space, `src/data/demo-spaces.json`):
+## How it works
 
-1. Tap the chip on the pitch stage → `/t` verifies the SUN signature → chat opens for **Pitch Area** with "Common here" presets (frequent issues from Agent Memory + the operator's FAQs).
-2. Tap "Right projector: flickers and goes black" (or type it) → Pip: *"This was already reported 2 days ago (P-202) and it's still open — latest note: replacement cable ordered."* with a **Seen before** card.
-3. Pip offers **"Add my report to P-202 and escalate"** plus tap-to-call / email buttons from the space's escalation settings.
-4. Visitor approves → **Anchor** updates P-202 on `/demo/maintenance` (live view link) → SIGNAL **reads the ticket back** from Core → card turns **VERIFIED** with evidence.
-5. Judge opens the **Phoenix trace** for that turn, and `/admin/spaces` to see how an operator configures a space.
+1. **Tap a place-specific chip.** The phone opens `/t`. Merely loading this page does not consume the scan. Pressing **Continue** sends the chip’s dynamic fields to `POST /api/tap/redeem`.
+2. **Establish the room context.** In verified mode, SIGNAL checks the NTAG 424 DNA SUN/SDM message, resolves the chip to a space, checks its read counter, and issues a signed, location-scoped session. The tab stores the session in `sessionStorage` and sends it in the `x-signal-session` header. NFC-only spaces enforce access on the server.
+3. **Describe the issue to Pip.** SIGNAL checks hazards before calling a model. For normal requests it loads the operator’s equipment instructions and FAQs, recalls location-labelled Agent Memory, and reads current incidents from SurrealDB Core.
+4. **Use history to choose the next step.** A deterministic matcher identifies related reports. Gemini returns a Zod-validated decision: answer a question, offer a safe fix, link an existing incident, ask a clarification, or propose a new report. A server policy gate evaluates the proposal.
+5. **Approve an action.** The visitor sees an approval button, and a report draft for email or external forms. Approval identifiers are signed and bound to the action, location, and target. Pip explains when an approved submission or call is starting.
+6. **Perform and check the action.** SIGNAL persists a ticket, starts an Anchor browser task, submits an email, or places an approved call. The phone shows an action card and polls for the outcome. A portal update is confirmed only when a database read finds both the requested status and the action’s reference note.
+7. **Keep the evidence and learn carefully.** Core stores incident status, work notes, action attempts, and audit events. Agent Memory stores sourced knowledge and observations. A visitor saying “That fixed it” becomes an explicitly unconfirmed observation, not proof that maintenance repaired the asset.
 
-Room 204 (`/s/room204`) stays as the second space (scenarios S1–S4 in `src/data/demo-fixtures.json`).
+```mermaid
+flowchart TD
+  Tag[NTAG 424 DNA chip] --> Landing[Phone: tap and Continue]
+  Landing --> NFC[Server: verify scan and issue room session]
+  NFC --> Chat[Pip chat]
+  Chat --> Safety{Hazard check}
+  Safety -->|Hazard| Handoff[Safety instructions and human handoff]
+  Safety -->|Normal request| Context[Space instructions and current records]
+  Memory[(SurrealDB Agent Memory)] --> Context
+  Core[(SurrealDB Core)] --> Context
+  Context --> Decision[Gemini + AI SDK + Zod]
+  Decision --> Policy[Deterministic policy gate]
+  Policy --> Help[Answer or safe troubleshooting]
+  Policy --> Approval[Visitor approves proposed action]
+  Approval --> Anchor[Anchor: maintenance form]
+  Approval --> Email[Email: demo inbox or Resend]
+  Approval --> Call[Twilio: approved maintenance call]
+  Approval --> Ticket[Persist a ticket]
+  Anchor --> Readback[Read ticket status and reference note]
+  Readback --> Core
+  Ticket --> Core
+  Email --> Receipt[Evidence and accurate outcome]
+  Call --> Receipt
+  Readback --> Receipt
+  Receipt --> Chat
+```
 
-### Demo space: Pitch Area
+## What each tool does
 
-| | |
-|---|---|
-| Equipment | Left projector, right projector (both mirror the podium), presenter laptop + clicker, guest Wi-Fi (`Pitch-Guest` / `Pitch-Guest-5G`), keypad lock on the equipment-room door |
-| Past reports (synthetic; dates stay relative to every reset) | P-201 left projector "No signal" — fixed 9 days ago (Duplicate display) · **P-202 right projector flickers — OPEN, 2 days ago** · P-203 clicker — fixed 6 days ago (battery) · P-204 Wi-Fi slow — fixed 4 days ago (use 5G) · **P-205 door keypad rejects code — OPEN, yesterday (urgent)** · P-206 Wi-Fi password — fixed 12 days ago |
-| FAQs | Connect laptop to projectors · Wi-Fi network · Presenter laptop · Door keypad · Who to contact |
-| Escalation | Urgent line `+1 555 0100` (demo number), `facilities@signal-demo.example`, SIGNAL portal (Anchor) |
-
-Try: "the right projector keeps going black", "the door keypad won't take the code", "what's the wifi network?", "my laptop shows no signal on the left projector".
-
-## What is live vs. not (honest status)
-
-| Area | State | Blocked on |
+| Tool | Role in SIGNAL | Implementation / boundary |
 |---|---|---|
-| Agent Memory write/recall, scoped by `location=room204` | **Live, verified** (`npm run smoke:memory`, `/api/chat`) | — |
-| Safety gate (smoke/fire/… → safety handoff, no model call) | **Live** | — |
-| `/api/health` + `/admin` status board (memory, Core, tracing probes) | **Live** | — |
-| Chat decision: Gemini 3.8 Flash (medium thinking) → `DecisionSchema` → policy gate → typed events | Wired. Recall + Core + model call ran end to end; **Google returned "prepayment credits are depleted"**, so chat shows a model-error notice | Top up Gemini credits |
-| "Seen before" matcher (deterministic, per space) → "reported N days ago" + escalation | **Live, verified** via API for Pitch Area (works without the model) | — |
-| Answer from records when the model is missing/failing (open match → escalate, resolved fix, FAQ, else offer ticket) | **Live**, labelled "built only from this space's records" | — |
-| FAQ presets (`/api/spaces/:id/faq`): frequent issues from Agent Memory, fallback to Core reports, + operator FAQs | **Live** (currently from Core reports — run "Seed Agent Memory" to switch to memory) | Memory seed |
-| Escalation without exposing contacts: the visitor approves, SIGNAL acts (Twilio call / email via Resend / Anchor report). Phone and email never reach the browser | Wired. Email runs in **demo mode** (`EMAIL_MODE=demo`): stored in SIGNAL's demo inbox (`/demo/inbox`, operator-only) and read back; nothing is sent. `EMAIL_MODE=resend` + key for real mail | — |
-| Anchor on the **company's own report website** (`/admin/spaces` → portal "The company's own portal" → "Anchor fills the form" + how-to). Visitor sees the exact draft first; result is "submitted (unverified)" with the site's confirmation text | Wired, never run live | `ENABLE_ANCHOR_ACTIONS=true`, a real report URL |
-| `/admin/spaces`: space context, equipment + safe steps, FAQs, escalation contacts, portal mode, NFC chip UIDs | Wired (operator secret). Saves to Core + writes a profile fact to Agent Memory | Durable Core |
-| Approvals (HMAC-bound `actionId`) → create incident / portal update | Wired, not clicked through in the UI yet | — |
-| SurrealDB Core: incidents, action attempts, audit, `/api/demo/reset` | **Connected to Surreal Cloud** (`wild-valley`, ns/db `main`, database user `signal_app`); `npm run smoke:core` passes. Env set locally + Vercel prod/preview; production `/api/health` reports `core.backend=surrealdb`, `/api/demo/reset` seeded 9 incidents | — |
-| `/demo/maintenance` portal | Reads/writes Core; status chips + note + "Save update" | — |
-| Anchor portal update + read-back verification | Wired, never run live | Durable Core, `ENABLE_ANCHOR_ACTIONS=true`, deploy |
-| NFC chip (NTAG 424 DNA) | **Chip written** with SIGNAL dataset. Verifier + `POST /api/tap/redeem` + `nfc:check` exist and are unit-tested. Chip UIDs can now be linked to a space in `/admin/spaces` (env `NFC_TAGS` still wins); `/api/chat` trusts the signed session's location | `/t` now redeems the tap; Pitch Area is **NFC-only** (verified tap session required, checked server-side on every visitor API). Needs `NFC_MODE=verified` + the chip UID linked on Vercel, then a phone test |
-| ElevenLabs cues | Generator script + chat playback with captions. **No audio generated** | API key needs `text_to_speech` permission |
-| Phoenix traces | Spans for chat / recall / LLM / policy / tools | `PHOENIX_COLLECTOR_ENDPOINT` + `PHOENIX_API_KEY` |
-| Daytona | **Live:** `npm run daytona:smoke` → fresh sandbox, `npm ci`, typecheck, NFC tests all pass | — |
-| Vercel | https://signal-three-iota.vercel.app (GitHub-connected). Latest commit **not pushed yet** | Push |
-| Outbound maintenance call (ElevenLabs agent + Twilio) | **Not started**, flag `ENABLE_OUTBOUND_CALLS=false` | See priorities |
-| Pip mascot | Placeholder capsule, 6 states + text labels | Art |
+| **Expo SDK 58 + Expo Router** | One React Native codebase for web and potential native builds; screens and server API routes. | The demonstrated flow is responsive web opened from NFC. `web.output: "server"` exports the client and server bundles. API routes live in `src/app/api/**/*+api.ts`. |
+| **React + React Native Web + TypeScript** | Pip chat, the maintenance desk, and operator screens. | Strict TypeScript; shared visual tokens and accessible controls. Native builds are not established as a tested deliverable here. |
+| **Vercel** | Hosts static assets and the Expo server handler. | `api/index.js` uses `expo-server/adapter/vercel`. `vercel.json` includes the server bundle and sets a 60-second function duration. |
+| **Gemini** | Produces a structured troubleshooting / escalation decision from supplied context. | Default primary: `gemini-3.8-flash`, medium thinking. Fast fallback: `gemini-3.5-flash-lite`, minimal thinking. The model does not choose contact destinations or decide whether an action succeeded. |
+| **Vercel AI SDK + Zod** | Calls Gemini and validates its decision shape. | `generateObject` uses `DecisionSchema`; the policy gate and action endpoints enforce permissions separately from model output. |
+| **SurrealDB Agent Memory** | Recalls previous problems, fixes, profiles, and visitor observations with provenance. | Official `@surrealdb/memory` client. Current retrieval uses `location=<id>` labels and hybrid recall. Literal writes use `infer: 'none'`. Registered hierarchical scopes are a future step. |
+| **SurrealDB Core** | Authoritative operational records: spaces, incidents, action attempts, demo email, and audit. | The `surrealdb` client in `src/lib/core.ts`. Missing Core credentials select a labelled in-process demo store, which is not durable across serverless instances. |
+| **Anchor Browser** | Fills the maintenance form after approval. | REST calls use the installed SDK’s types; its runtime import is avoided because it pulls Playwright into Metro. Owned-portal writes are verified through Core read-back. External forms remain submitted/unverified. |
+| **ElevenLabs** | Generates Pip’s five short voice cues. | `npm run cues` writes cached MP3s to `public/audio`. Playback requires visitor opt-in and has text captions and replay controls. Full chat answers are currently text; ElevenLabs is not the current maintenance-call voice. |
+| **Twilio Programmable Voice** | Places the approved outbound maintenance call and reports call status. | The current call reads a fixed report using TwiML `<Say voice="Polly.Joanna-Generative">`. It cannot take replies. Destination is restricted to `DEMO_APPROVED_PHONE_E164`. |
+| **Resend** | Optional real email escalation to the operator-configured recipient. | `EMAIL_MODE=resend` uses Resend. Default `EMAIL_MODE=demo` stores and reads back a message in SIGNAL’s own inbox; it sends no real email. |
+| **Arize Phoenix + OpenTelemetry** | Instrument chat, recall, model, policy, and tool spans. | `src/lib/tracing.ts` uses Phoenix OTEL and OpenInference attributes. Export is a no-op without `PHOENIX_COLLECTOR_ENDPOINT`; evaluations do not grant action permissions. |
+| **Daytona** | Runs reproducible development checks in a fresh sandbox. | `npm run daytona:smoke` uploads source while excluding local env files, installs dependencies, typechecks, and runs NFC tests. `--serve` also builds and exposes a preview. Daytona does not host permanent memory or production data. |
+| **NXP NTAG 424 DNA** | Produces dynamic NFC URL fields that the server can authenticate. | AES/CMAC SUN/SDM verification is implemented in `src/lib/nfc`. This authenticates a chip-generated message; it does not establish the visitor’s identity or GPS location. |
 
-Rule: only show behaviour that actually runs. Seeded/simulated data is labelled.
+An Anthropic SDK is installed, but the active chat provider is Google/Gemini. ElevenLabs conversational-agent environment fields are reserved for a possible later call integration; the current call route uses Twilio directly.
 
-## Plan and next steps (in priority order)
+## Memory, status, and verification
 
-**P0 — the demo doesn't work without these.**
+**Agent Memory answers “what has happened here, and what might help?” Core answers “what is the current incident and action record?”** A related memory hit is not sufficient proof that a current incident matches; the deterministic report matcher supplies that additional check.
 
-1. **Gemini credits.** Top up at ai.studio. Then retest S1–S4 in the chat.
-2. **SurrealDB Core instance.** Create a Surreal Cloud (or self-hosted) DB and set `SURREALDB_URL`, `SURREALDB_USERNAME`, `SURREALDB_PASSWORD` in `.env.local` + Vercel. The app seeds Room 204 on first read. Then `POST /api/demo/reset`. This also unblocks Anchor and makes NFC replay protection durable.
-3. **Push + deploy**, then check `/api/health` on the phone over cellular.
-4. **NFC on the phone** (chip already written):
-   1. TagWriter → Read tags twice → `e`/`c` must change.
-   2. `npm run nfc:check -- "<url from the chip>"` → note the `uid`.
-   3. Paste the UID into **`/admin/spaces` → Pitch Area → NFC chips** (or set `NFC_TAGS=<UID>=pitch_area`), and set `NFC_MODE=verified` in `.env.local` + Vercel. Redeploy.
-   4. ✅ Done in code: `/t` redeems on **Continue**, keeps the signed session in this tab's `sessionStorage` (never in the URL) and opens `/s/<space>`. The Pitch Area has `access: "nfc"`, so chat, FAQ presets, reports, Anchor actions and feedback return **401 "tap the chip"** without that session (operators with the secret get "Operator preview").
-   5. Tap with the phone → should land in chat with "Secure NFC scan checked". Tap again with the old URL → `replayed`.
-5. **Anchor live run on Vercel.** Set `ENABLE_ANCHOR_ACTIONS=true`, run S1 to step 4, watch the live view, confirm VERIFIED + evidence. If the agent struggles with the RN-web form, adjust the prompt in `src/lib/anchor.ts` (not the success logic).
+Source text and timestamps distinguish synthetic fixtures, operator profiles, visitor reports, and visitor-reported fixes. When knowledge changes, preserve history and record supersession. The profile text already describes supersession; complete structured supersession relationships remain unfinished.
 
-**P1 — what judges look at.**
+| Outcome | What it actually establishes |
+|---|---|
+| Incident saved | Core persisted the report; this does not prove staff have responded. |
+| Owned portal `VERIFIED` | Read-back found the requested incident status and the attempt’s reference note. It verifies the record update, not the physical repair. |
+| External form `AGENT_REPORTED` | Anchor reports a submission and site confirmation; SIGNAL cannot independently read back that third-party record. |
+| Demo email `VERIFIED` | The message exists in SIGNAL’s own demo inbox and was read back. No real email was sent. |
+| Real email accepted | Resend accepted the message; delivery and reading remain unconfirmed. |
+| Call `INITIATED` | Twilio accepted the call request; it may still fail or go unanswered. |
+| Call `VERIFIED` | The code maps Twilio’s completed call with positive duration to this state. The accompanying evidence distinguishes completion from acknowledgement; no human acknowledgement is collected. |
+| Visitor reports a successful fix | An observed, unconfirmed memory item; it does not automatically resolve an authoritative incident. |
 
-6. **Phoenix**: set the collector env, run one chat turn, keep the trace URL for the pitch.
-7. **ElevenLabs cues**: give the key `text_to_speech` permission (or make a new key), `npm run cues`, commit `public/audio/*`. About 5 minutes.
-8. **Test matrix** S1–S4 + `docs/06` checklist; record a backup demo video.
-9. **Daytona story**: `npm run daytona:smoke -- --serve` for a live preview URL from a sandbox.
+The model may propose an action. Approval checks, fixed destinations, action-attempt records, and audit logic live on the server. In-flight attempt reuse and the call cooldown are implemented; these should not be presented as a complete, transactionally enforced idempotency system for every action.
 
-**P2 — only if P0/P1 are done.**
+## Demo: a room remembers, then acts
 
-10. Pip art (6 states), reduced-motion check.
-11. **Outbound call (Twilio + ElevenLabs agent).** Needs: a Twilio number imported into ElevenLabs (`ELEVENLABS_AGENT_PHONE_NUMBER_ID`), a configured agent (`ELEVENLABS_AGENT_ID`) that discloses it is a bot, one opt-in number (`DEMO_APPROVED_PHONE_E164`), human approval, cooldown, never 911. The policy gate already blocks calls until all of that exists.
+The default demo space is **Pitch Area**. Its seeded history includes an open right-projector report **P-202**, originally reported two days before the fixture reset, with a replacement-cable note. Room 204 is a second demo space with scenarios S1–S4.
 
-### Should we do Twilio / ElevenLabs calls now?
+1. On a laptop, open the [P-202 maintenance view](https://signal-three-iota.vercel.app/demo/maintenance?ticket=P-202).
+2. On the phone, tap the NFC chip, press **Continue**, and enable Pip’s speaker. Show the verified badge only if it actually appears.
+3. Type **“The right projector keeps going black.”**
+4. Show the existing report and its dated note: the room remembers the issue, avoiding another duplicate ticket.
+5. Approve **Add my report to P-202 and escalate**. Pip explains the submission; Anchor works on the owned maintenance form.
+6. Wait for the actual outcome. If it is `VERIFIED`, refresh the laptop portal and point to the saved reference note. **“A click isn’t enough—SIGNAL checks the saved record before confirming the update.”**
+7. Optionally approve the separate call while holding the pre-approved receiving phone. A ten-minute per-ticket cooldown limits repeated calls.
 
-**Not yet.** The call isn't part of any target prize (SurrealDB, Anchor, Daytona). It adds a second vendor, a phone number, and the riskiest side effect in the app. Project rule 12 says to cut it first. Voice cues are different: they're a 5-minute key fix and add charm, so they're in P1. Start calls only after S1 runs end to end on a phone with a real chip, durable Core and a verified Anchor update.
+Another useful prompt is **“My laptop shows no signal on the left projector.”** The seeded resolved report records switching the laptop to Duplicate display mode, illustrating a sourced self-service fix.
 
-## Quick start
+The maintenance desk includes ticket/room/equipment search, status filters and counts, a selected-ticket view, readable activity history, work notes, character limits, and save/error feedback. Its stable ticket headings, status labels, note labels, and **Save update** controls remain available to Anchor.
 
-Chat timeout protection: space access waits at most 8 s; memory (10 s) and incident reads (8 s) run concurrently. The configured `AI_MODEL` gets 15 s, then `AI_FALLBACK_MODEL` (default `gemini-3.5-flash-lite`, minimal thinking) gets 10 s. Both use zero automatic retries. If both fail, Pip returns an explicitly labelled answer from the space's records. A Core outage never counts as an empty incident history. Trace flushing waits at most 1 s. Vercel logs contain `chat.stage` timings without prompt text. Run `node --test scripts/chat-timeout.test.cjs` for simulated provider-hang regression tests. The fallback uses the same Gemini account, so it cannot bypass depleted credits; records-only answers do not require model credits.
+See the [full phone demo script](docs/12_PHONE_DEMO.md). Rehearse the live Anchor flow before presenting; a manual portal save is a different test. Describe fixtures and backup recordings honestly.
 
-```bash
+## Current status and remaining work
+
+Observed on October 16, 2026; production health was checked during this documentation update.
+
+| Area | Evidence / remaining work |
+|---|---|
+| Deployment | Live on Vercel. Recent production builds and TypeScript checks passed. |
+| Chat | Production requests returned 200 after deadline protection was added. A real-service test demonstrated the Gemini 3.5 Flash-Lite fallback. Billing, quotas, and demand can still affect either model. |
+| Core | Production health reports `backend=surrealdb` and a successful probe. Nine demo incidents were visible in the maintenance API during portal verification. |
+| Agent Memory | Production health probe succeeds. Earlier sourced write/recall smoke checks passed. Health alone does not validate every recall result. |
+| Maintenance desk | Deployed; search, filtering, empty states, and a UI save followed by read-back passed against an isolated local demo store. Production reads and room/equipment labels were checked. |
+| Anchor | Credentials and action flag are enabled. Start/poll/read-back code exists. A successful live browser update has not been established by the checks recorded in this chat. |
+| NFC | Verified redemptions appeared in supplied production logs; parser/crypto tests pass. Replay tracking is still in process memory: it is best-effort across Vercel instances, even when Core is connected. |
+| Pip audio | All five ElevenLabs clips were generated and deployed; production MP3 responses returned 200 and matched the generated files. Sound is opt-in. |
+| Calls | Production health reports Twilio configured, an approved destination set, and calls enabled. A successful received call has not been established here. Production health reports webhook signing unavailable; polling provides the implemented status fallback. |
+| Email | Demo mode stores messages without sending. Real Resend delivery requires its key, verified sender, and `EMAIL_MODE=resend`; this was not live-tested here. |
+| Phoenix | Spans are implemented, but production health currently reports tracing disabled because no collector endpoint is set. Do not claim a captured trace until one is visible in Phoenix. |
+| Daytona | An earlier clean-sandbox install/typecheck/NFC smoke run passed. It was not rerun for this documentation change. |
+
+Before presenting: run the live Anchor rehearsal, verify one call if using it in the pitch, configure Phoenix and inspect a real trace, and complete the [mandatory test matrix](docs/06_SETUP_AND_HACKATHON.md). Before wider use: implement durable atomic replay protection, harden portal/operator access, complete action idempotency and supersession, and review privacy/retention and deployment controls. The owned maintenance portal is intentionally a demo portal, not a production admin-security reference.
+
+## Run locally
+
+The project has been built with Node.js 22. Dependencies and scripts are in [package.json](package.json).
+
+```powershell
 npm install
-cp .env.example .env.local      # then fill values (file is gitignored)
-npm run web                     # http://localhost:8081  (API routes work in dev)
+# New checkout only: copy the template, then enter credentials privately.
+Copy-Item .env.example .env.local
+npm run web
+```
+
+Open `http://localhost:8081`. Do not overwrite an existing `.env.local`. For a production-style local run:
+
+```powershell
 npm run typecheck
+npm run build:web
+npm run serve
 ```
 
-Useful scripts:
+Missing providers produce notices or degraded behaviour rather than invented results. A Core outage is not treated as an empty incident history. An NFC-only space still requires a valid tap session or operator preview; use the open Room 204 demo when testing without a chip.
 
-| Command | What it does |
+### Environment configuration
+
+Use [.env.example](.env.example) as the full variable reference. Configure only the integrations needed for the chosen flow, in `.env.local` for development and the appropriate Vercel environment for deployment.
+
+| Capability | Server-side configuration |
 |---|---|
-| `npm run smoke:memory` | Write + recall one sourced fact in Agent Memory |
-| `npm run build:web && npm run serve` | Production-like build (what Vercel runs) |
-| `npm run nfc:check -- "<chip url>"` | Verify a chip's SUN URL locally |
-| `npm run test:nfc` | NFC verifier unit tests |
-| `npm run cues` | Generate Pip's 5 voice cues into `public/audio` |
-| `npm run daytona:smoke [-- --serve]` | Clean-room install + checks in a Daytona sandbox |
+| Sessions and operator tools | `APP_SESSION_SECRET`, `DEMO_OPERATOR_LOGIN_SECRET` |
+| Chat | `GEMINI_API_KEY` (or `GOOGLE_GENERATIVE_AI_API_KEY`), `AI_MODEL`, `AI_FALLBACK_MODEL`, `AI_THINKING_LEVEL` |
+| Agent Memory | `AGENT_MEMORY_ENDPOINT`, `AGENT_MEMORY_CONTEXT_ID`, `AGENT_MEMORY_API_KEY` |
+| Core | `SURREALDB_URL`, `SURREALDB_NAMESPACE`, `SURREALDB_DATABASE`, `SURREALDB_USERNAME`, `SURREALDB_PASSWORD`; optional `SURREALDB_AUTH_LEVEL` |
+| Browser actions | `ANCHORBROWSER_API_KEY`, public `MAINTENANCE_PORTAL_BASE_URL`, `ENABLE_ANCHOR_ACTIONS=true`; external portal settings come from the operator’s space profile |
+| Generate Pip audio | `ELEVENLABS_API_KEY` with `text_to_speech` permission, `ELEVENLABS_VOICE_ID`; generation happens offline, and the deployed files play without a browser API key |
+| Calls | `TWILIO_ACCOUNT_SID`, `TWILIO_PHONE_NUMBER`, `TWILIO_API_KEY` + `TWILIO_API_SECRET` or `TWILIO_AUTH_TOKEN`, `DEMO_APPROVED_PHONE_E164`, `ENABLE_OUTBOUND_CALLS=true` |
+| Call callbacks | `TWILIO_AUTH_TOKEN` for signature validation, even when API-key credentials place the call; optional `PUBLIC_BASE_URL` |
+| Email | `EMAIL_MODE=demo` by default; real sending needs `EMAIL_MODE=resend`, `RESEND_API_KEY`, and `EMAIL_FROM` |
+| Tracing | `PHOENIX_COLLECTOR_ENDPOINT`, `PHOENIX_API_KEY` when required, optional `PHOENIX_PROJECT` |
+| Daytona | `DAYTONA_API_KEY` |
+| NFC | `NFC_MODE`, `NFC_SDM_META_KEY`, `NFC_SDM_FILE_KEY`, optional `NFC_KEY_STORE_REF`, and `NFC_TAGS` or operator chip mappings |
 
-Operator-only endpoints (header `x-demo-secret: <DEMO_OPERATOR_LOGIN_SECRET>`):
+Secrets remain server-side; never use `EXPO_PUBLIC_` for keys. Do not commit `.env.local`. A configured chip needs tested SDM offsets and matching keys; factory-zero keys are only a bring-up convenience. See [NFC setup](docs/10_NFC_SETUP.md).
 
-```bash
-curl -X POST https://<host>/api/memory/seed -H "x-demo-secret: …"   # Room 204 history into Agent Memory
-curl -X POST https://<host>/api/demo/reset  -H "x-demo-secret: …"   # restore demo reports in Core (?spaces=1 also resets space profiles)
-curl https://<host>/api/audit -H "x-demo-secret: …"                  # recent audit events
-```
+### Chat latency and fallback
 
-## Stack
+The server returns one typed-event JSON batch, not a streamed response. The initial checking state does not identify which provider is currently running.
 
-| Layer | Choice |
+| Stage | Maximum application wait |
 |---|---|
-| App | **Expo SDK 58 + Expo Router** (React Native + web), `web.output = "server"` so `src/app/api/**` are real server routes |
-| Hosting | **Vercel** — `expo export -p web` → static client + `api/index.js` serverless handler |
-| Memory | **SurrealDB Agent Memory** (`@surrealdb/memory`) — knowledge + provenance |
-| Operational DB | **SurrealDB Core** (`surrealdb`, `src/lib/core.ts`) — authoritative incidents, action attempts, audit |
-| LLM | Vercel AI SDK + **Gemini 3.8 Flash**, thinking `medium` (`src/lib/agent/model.ts`) |
-| Browser agent | **Anchor Browser** REST (`src/lib/anchor.ts`) — only our `/demo/maintenance`, verified by Core read-back |
-| Voice | ElevenLabs cached cues; outbound calls off |
-| Dev sandbox | **Daytona** (`scripts/daytona-smoke.mjs`) |
-| Tracing | Arize **Phoenix** (`src/lib/tracing.ts`, OpenInference span kinds) |
-| NFC | NTAG 424 DNA SUN/SDM verifier (`src/lib/nfc/*`, `POST /api/tap/redeem`) |
+| Space access | 8 s |
+| Memory and incident reads, running concurrently | 10 s for memory; 8 s for incidents |
+| Primary Gemini attempt | 15 s |
+| Fast Gemini fallback after primary failure | 10 s |
+| Trace flush | 1 s |
 
-## Repo layout
+Model calls use zero automatic retries and cancellation. If both attempts fail, Pip returns an explicitly labelled answer from available space records. Both models use the same Google credentials, so switching models cannot bypass depleted account credits. `chat.stage` logs record stage timing without prompt text. These budgets reduce timeout risk; they are not a guarantee against all hosting or network failures.
 
+### Commands and checks
+
+| Command | Purpose / side effects |
+|---|---|
+| `npm run typecheck` | Strict TypeScript check. |
+| `npm run build:web` | Export Expo client and API bundles. |
+| `npm run test:nfc` | Deterministic NFC parser and crypto tests. |
+| `node --test scripts/chat-timeout.test.cjs` | Simulated hung-provider, fallback, and access regression tests. |
+| `npm run smoke:core` | Exercise the configured Core connection; inspect the script before running against shared data. |
+| `npm run smoke:memory` | Write and recall a sourced fact in the configured Agent Memory context. |
+| `npm run nfc:check -- "<chip URL>"` | Check a chip URL locally; keep real scan URLs out of public logs. |
+| `npm run cues` | Generate five cached ElevenLabs clips; uses provider quota. Deploy the resulting `public/audio` files. |
+| `npm run daytona:smoke` | Create a sandbox, install, typecheck, run NFC tests, then delete the sandbox. |
+| `npm run daytona:smoke -- --serve` | Also build/serve a preview; keeps the sandbox until it is deleted separately. |
+
+Operator requests use `x-demo-secret: <DEMO_OPERATOR_LOGIN_SECRET>`:
+
+- `POST /api/memory/seed`: seed all space profiles and Core incidents into Agent Memory.
+- `POST /api/demo/reset`: restore demo reports; `?spaces=1` also resets space profiles. This mutates data; do not run during someone else’s rehearsal.
+- `GET /api/audit`: inspect recorded audit events.
+
+## Pages and API map
+
+| Page / API | Purpose |
+|---|---|
+| `/t` → `POST /api/tap/redeem` | NFC landing, verification, redemption, and session issuance. |
+| `/s/<space>` → `POST /api/chat` | Visitor chat, sourced guidance, and action approvals. `GET /api/chat` returns 405. |
+| `POST /api/incidents`, `POST /api/feedback` | Approved report creation; visitor-reported fix observation. |
+| `/admin`, `/admin/spaces` | Integration board and operator configuration of spaces, equipment, FAQs, escalation, and chips. |
+| `/demo/maintenance`, `/api/portal/tickets`, `/api/portal/tickets/:id` | Owned demonstration portal and its Core-backed read/write endpoints. |
+| `POST /api/actions/portal-update` | Start the approved Anchor task on the owned portal. |
+| `POST /api/actions/external-report` | Start an approved report on an operator-configured HTTPS form. |
+| `POST /api/actions/call`, `/api/webhooks/twilio/status` | Initiate a restricted call; receive signed status callbacks. |
+| `POST /api/actions/email`, `/demo/inbox` | Submit approved email escalation; inspect the operator-only demo inbox. |
+| `GET /api/actions/:id` | Poll action status; perform provider checks or owned-portal read-back. |
+| `/api/spaces/resolve`, `/api/spaces/:id/faq` | Resolve visitor-safe space context and sourced quick prompts. |
+| `/api/health`, `/api/audit` | Integration probes and operator audit inspection. |
+
+```text
+api/index.js                 Vercel entry point for the Expo server bundle
+src/app/                     Screens and API route handlers
+src/lib/agent/               Model setup, decision schema, policy, and report matching
+src/lib/core.ts              Authoritative operational database / local demo fallback
+src/lib/memory.ts            Agent Memory knowledge and provenance
+src/lib/anchor.ts            Owned/external browser-task integration
+src/lib/twilio.ts            Calls, callback validation, and outcome descriptions
+src/lib/email.ts             Demo inbox and Resend delivery
+src/lib/nfc/                 SUN/SDM verification, tag mapping, replay store, sessions
+src/lib/tracing.ts           Phoenix / OpenTelemetry spans
+src/design/                  Shared design system, maintained by the UI session
+src/data/                    Synthetic incidents, spaces, FAQs, and scenarios
+public/audio/                Cached Pip cues and their text manifest
+scripts/                     Generation, smoke checks, and regression tests
+docs/                        Product specification, setup, demo, and original playbook
 ```
-src/app/                       Expo Router screens + API routes
-  t.tsx                        NFC landing (GET never consumes a scan)
-  s/[session].tsx              visitor chat with Pip (approvals, incident + action cards, cues)
-  admin.tsx                    integration status board
-  admin/spaces.tsx             operator portal: space context, FAQs, escalation, NFC chips
-  demo/maintenance.tsx         owned demo portal (Anchor's only allowed target)
-  api/chat+api.ts              safety gate → recall + Core → Gemini decision → policy gate
-  api/incidents+api.ts         visitor-approved ticket creation
-  api/actions/*                Anchor portal update + read-back verification
-  api/portal/tickets*          portal read/write (Core)
-  api/tap/redeem+api.ts        NFC SUN verification → signed session
-  api/spaces*                  space profiles (public/operator), resolve, FAQ presets
-  api/health, audit, feedback, demo/reset, memory/seed
-src/lib/                       server-only: env, memory, core, anchor, approvals, tracing, nfc/, agent/
-src/design/                    UI design system (owned by the UI session)
-src/data/demo-spaces.json      Pitch Area (default) + Room 204 profiles, Pitch Area past reports
-src/data/demo-fixtures.json    synthetic Room 204 history + scenarios S1–S4
-scripts/                       smoke-memory, nfc-check, gen-cues, daytona-smoke
-docs/                          spec 01–10, playbook
-```
 
-## Secrets
+## Deployment and further reading
 
-Real keys live only in `.env.local` (gitignored) and Vercel env vars. They are temporary hackathon keys — rotate after the event. Nothing is prefixed `EXPO_PUBLIC_`; every integration is called from `src/app/api/**`.
-`.mcp.json` reads `AGENT_MEMORY_ENDPOINT` / `AGENT_MEMORY_API_KEY` from the **system** environment (Claude Code does not read `.env.local`).
-Note: `.gitignore` contains `.env*`, which also matches `.env.example`. It stays tracked because it's already committed. If you ever re-add it, use `git add -f`.
+`expo export -p web` produces `dist/client` and `dist/server`. Vercel serves the client and rewrites server requests to `api/index.js`. The project is GitHub-connected; pushes to its production branch trigger builds. Direct CLI production deployments were also used during integration. Set `MAINTENANCE_PORTAL_BASE_URL` to the publicly reachable owned portal because Anchor runs in the cloud. Native `anchorbrowser` runtime imports must stay out of the Metro server bundle; use type imports and the existing REST wrapper.
 
-## Deploy
+Long-running browser work is started asynchronously and checked by polling. A durable background job system and webhook-based continuation for broader workflows remain future work. Outbound calls and browser actions default to disabled in the environment template and must be explicitly enabled for a configured demo.
 
-Pushing to `main` deploys to Vercel (project `signal`). Every var in `.env.example` must exist in Vercel (Production + Preview). `MAINTENANCE_PORTAL_BASE_URL` must be the public `/demo/maintenance` URL, because Anchor runs in the cloud.
+- [Product and scope](docs/01_PRODUCT_AND_SCOPE.md)
+- [Architecture and contracts](docs/02_SYSTEM_ARCHITECTURE.md)
+- [NFC security model](docs/03_NFC_SECURITY.md)
+- [Memory and evaluation](docs/04_AGENT_MEMORY_AND_EVALUATION.md)
+- [Brand and UX](docs/05_BRAND_AND_UX.md)
+- [Setup and mandatory test matrix](docs/06_SETUP_AND_HACKATHON.md)
+- [Pitch and roadmap](docs/07_PITCH_AND_ROADMAP.md)
+- [Provider references and corrections](docs/08_REFERENCES_AND_CORRECTIONS.md)
+- [Expo translation of the original playbook](docs/09_EXPO_STACK.md)
+- [NFC provisioning and setup](docs/10_NFC_SETUP.md)
+- [Current Twilio call implementation](docs/11_TWILIO.md)
+- [Phone demo script](docs/12_PHONE_DEMO.md)
+
+The original playbook assumed Next.js; the implementation uses **Expo Router + Vercel**. When older planning documents disagree with current behaviour, inspect the implementation and this dated status snapshot before making a demo claim.
