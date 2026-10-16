@@ -1,0 +1,29 @@
+/* SIGNAL brand starter — accessible neutral surfaces; verify contrast in final UI */
+:root {
+  --signal-ink: #192831;
+  --signal-lime: #D5FF72;
+  --signal-sea: #2C766C;
+  --signal-paper: #F7F8F4;
+  --signal-white: #FFFFFF;
+  --signal-muted: #617077;
+  --signal-line: #E2E7E4;
+  --signal-alert: #C55236;
+  --signal-warning: #E2B157;
+  --signal-radius-sm: 10px;
+  --signal-radius-md: 16px;
+  --signal-radius-lg: 24px;
+  --signal-ease: cubic-bezier(.2,.8,.2,1);
+  --signal-shadow: 0 12px 44px rgba(25,40,49,.07);
+}
+body {
+  color: var(--signal-ink);
+  background: var(--signal-paper);
+  font-family: 'Manrope', 'Inter', system-ui, sans-serif;
+}
+.signal-card { background: var(--signal-white); border: 1px solid var(--signal-line); border-radius: var(--signal-radius-lg); box-shadow: var(--signal-shadow); }
+.signal-primary { background: var(--signal-lime); color: var(--signal-ink); border-radius: var(--signal-radius-md); font-weight: 700; min-height: 44px; }
+.signal-muted { color: var(--signal-muted); }
+.signal-status { display: inline-flex; gap: 6px; align-items: center; font-weight: 600; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

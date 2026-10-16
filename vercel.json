@@ -1,0 +1,14 @@
+{
+  "buildCommand": "npx expo export -p web",
+  "outputDirectory": "dist/client",
+  "devCommand": "npx expo serve",
+  "cleanUrls": true,
+  "framework": null,
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "dist/server/**",
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
+}

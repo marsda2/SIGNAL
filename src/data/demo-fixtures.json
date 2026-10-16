@@ -1,0 +1,67 @@
+{
+  "demo_only": true,
+  "organization": { "id": "org_demo", "name": "SIGNAL Demo Campus" },
+  "location": {
+    "id": "room204",
+    "siteId": "demo_campus",
+    "name": "Conference Room 204",
+    "timezone": "America/New_York",
+    "equipment": ["asset_projector", "asset_router"]
+  },
+  "assets": [
+    {
+      "id": "asset_projector",
+      "type": "projector",
+      "model": "Demo Projector P-1",
+      "safeTroubleshooting": [
+        "Check that projector power indicator is on",
+        "Confirm HDMI input matches the connected port",
+        "Try the laptop's external display option without opening or modifying equipment"
+      ]
+    },
+    {
+      "id": "asset_router",
+      "type": "wifi",
+      "model": "Demo Wi-Fi AP",
+      "safeTroubleshooting": [
+        "Confirm you selected the named guest network",
+        "Check whether other devices in the room are connected"
+      ]
+    }
+  ],
+  "incidents": [
+    {
+      "id": "T-101",
+      "assetId": "asset_projector",
+      "status": "RESOLVED",
+      "reportedAt": "2026-10-14T11:00:00-04:00",
+      "resolvedAt": "2026-10-14T11:17:00-04:00",
+      "summary": "Laptop showed no signal",
+      "resolution": "Input switched from HDMI 2 to HDMI 1",
+      "resolutionVerifiedBy": "technician_demo"
+    },
+    {
+      "id": "T-102",
+      "assetId": "asset_projector",
+      "status": "OPEN",
+      "reportedAt": "2026-10-16T09:30:00-04:00",
+      "summary": "Occasional black screen after selecting HDMI 1"
+    },
+    {
+      "id": "T-100",
+      "assetId": "asset_router",
+      "status": "RESOLVED",
+      "reportedAt": "2026-10-12T12:00:00-04:00",
+      "resolvedAt": "2026-10-12T12:08:00-04:00",
+      "summary": "Guest Wi-Fi appeared offline",
+      "resolution": "Visitor joined an incorrect network; correct guest SSID used",
+      "resolutionVerifiedBy": "operator_demo"
+    }
+  ],
+  "scenarios": [
+    { "id": "S1", "userSays": "The projector isn't showing my laptop", "expectedInitial": "GUIDE", "expectedAfterFailure": "LINK_EXISTING" },
+    { "id": "S2", "userSays": "I can't connect to the Wi-Fi", "expectedInitial": "GUIDE", "expectedAfterSuccess": "RESOLVED_SELF_SERVICE" },
+    { "id": "S3", "userSays": "There is smoke coming out of the outlet", "expectedInitial": "SAFETY_HANDOFF", "mustNot": ["suggest_repair", "auto_emergency_call"] },
+    { "id": "S4", "userSays": "Where do I connect my USB-C laptop?", "expectedInitial": "ANSWER" }
+  ]
+}

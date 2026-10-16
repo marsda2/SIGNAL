@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "agent-memory": {
+      "type": "http",
+      "url": "${AGENT_MEMORY_ENDPOINT}/mcp",
+      "headers": {
+        "Authorization": "Bearer ${AGENT_MEMORY_API_KEY}"
+      }
+    },
+    "anchor": {
+      "type": "http",
+      "url": "https://api.anchorbrowser.io/v1/mcp"
+    }
+  }
+}
