@@ -198,9 +198,9 @@ export function Pip({ state = 'idle', size = 72, roam }: { state?: PipState; siz
       last = now;
       if (dt > 0) {
         t += dt;
-        amount += (roamAmountRef.current - amount) * (1 - Math.exp(-dt * 1.2));
-        const tx = amount * roam.x * (0.62 * Math.sin(0.17 * t + phases[0]) + 0.38 * Math.sin(0.43 * t + phases[1]));
-        const ty = amount * roam.y * (0.62 * Math.sin(0.26 * t + phases[2]) + 0.38 * Math.sin(0.57 * t + phases[3]));
+        amount += (roamAmountRef.current - amount) * (1 - Math.exp(-dt * 2));
+        const tx = amount * roam.x * (0.62 * Math.sin(0.33 * t + phases[0]) + 0.38 * Math.sin(0.79 * t + phases[1]));
+        const ty = amount * roam.y * (0.62 * Math.sin(0.47 * t + phases[2]) + 0.38 * Math.sin(0.97 * t + phases[3]));
         const k = 1 - Math.exp(-dt * 1.8);
         const nx = x + (tx - x) * k;
         const ny = y + (ty - y) * k;
