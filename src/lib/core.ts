@@ -27,7 +27,8 @@ export type Incident = {
 export type ActionState = 'PENDING' | 'INITIATED' | 'VERIFIED' | 'FAILED' | 'PENDING_REVIEW';
 export type ActionAttempt = {
   key: string;
-  kind: 'PORTAL_UPDATE' | 'CREATE_INCIDENT';
+  kind: 'PORTAL_UPDATE' | 'CREATE_INCIDENT' | 'MAINTENANCE_CALL';
+  callSid?: string | null;
   incidentKey: string;
   locationId: string;
   state: ActionState;
@@ -346,12 +347,27 @@ export async function updateAttempt(key: string, patch: Partial<ActionAttempt>):
 }
 
 /** Idempotency: an in-flight portal update for the same incident is reused rather than duplicated. */
-export async function inFlightAttempt(incidentKey: string): Promise<ActionAttempt | undefined> {
-  const rows =
-    coreBackend() === 'local'
-      ? [...local().actions.values()].filter((a) => a.incidentKey === incidentKey)
-      : await q<ActionAttempt>('SELECT * FROM action_attempt WHERE incidentKey = $incidentKey', { incidentKey });
-  return rows.find((a) => a.state === 'PENDING' || a.state === 'INITIATED');
+export async function inFlightAttempt(incidentKey: string, kind: ActionAttempt['kind'] = 'PORTAL_UPDATE'): Promise<ActionAttempt | undefined> {
+  const rows = await attemptsForIncident(incidentKey);
+  return rows.find((a) => a.kind === kind && (a.state === 'PENDING' || a.state === 'INITIATED'));
+}
+
+async function attemptsForIncident(incidentKey: string): Promise<ActionAttempt[]> {
+  return coreBackend() === 'local'
+    ? [...local().actions.values()].filter((a) => a.incidentKey === incidentKey)
+    : await q<ActionAttempt>('SELECT * FROM action_attempt WHERE incidentKey = $incidentKey', { incidentKey });
+}
+
+/** Cooldown guard: the newest call attempt for this ticket that actually reached Twilio within `windowMs`. */
+export async function recentCallAttempt(incidentKey: string, windowMs: number): Promise<ActionAttempt | undefined> {
+  const cutoff = Date.now() - windowMs;
+  return (await attemptsForIncident(incidentKey)).find((a) => a.kind === 'MAINTENANCE_CALL' && a.callSid && Date.parse(a.createdAt) > cutoff);
+}
+
+export async function listAttemptsByCallSid(callSid: string): Promise<ActionAttempt[]> {
+  return coreBackend() === 'local'
+    ? [...local().actions.values()].filter((a) => a.callSid === callSid)
+    : await q<ActionAttempt>('SELECT * FROM action_attempt WHERE callSid = $callSid', { callSid });
 }
 
 // ---------- audit ----------

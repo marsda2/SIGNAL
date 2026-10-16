@@ -1,16 +1,38 @@
-import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Pip } from '@/components/Pip';
-import { Badge, Card, text } from '@/components/ui';
-import { ChatBubble, Composer, EscalationCard, StatusMark, type StatusKind } from '@/design';
+import { Pip, PipAvatar } from '@/components/Pip';
+import { Badge, text } from '@/components/ui';
+import {
+  ActionRow,
+  Callout,
+  ChatBubble,
+  Composer,
+  EscalationCard,
+  GlassCard,
+  Glyph,
+  HeaderIconButton,
+  IconWell,
+  LocationBlock,
+  SignalButton,
+  SignalHeader,
+  SignalText,
+  StatusChip,
+  SuggestionTile,
+  SuggestionTiles,
+  palette,
+  radius,
+  type CalloutTone,
+  type GlyphName,
+  type StatusKind,
+} from '@/design';
 import type { ChatEvent, CueName, EscalationOption, FaqPreset, IncidentView, PipState, PublicSpace } from '@/lib/agent/contracts';
-import { colors, DEMO_LOCATION, space } from '@/constants/tokens';
+import { DEMO_LOCATION } from '@/constants/tokens';
 import { visitorHeaders } from '@/lib/visitor-session';
 
 type Approval = Extract<ChatEvent, { type: 'approval' }>;
-type Attempt = { key: string; state: string; liveViewUrl?: string | null; evidence?: string | null; error?: string | null; incidentKey: string };
+type Attempt = { key: string; kind?: string; state: string; liveViewUrl?: string | null; evidence?: string | null; error?: string | null; incidentKey: string };
 
 type Item =
   | { id: string; kind: 'user'; text: string }
@@ -47,7 +69,30 @@ function playCue(cue: CueName) {
 
 const GREETING_ID = 'greeting';
 
+/** Icon for a "Common here" preset. Presentation only: picks a picture from the words, never changes what is sent. */
+function presetIcon(p: FaqPreset): GlyphName {
+  const s = `${p.label} ${p.message}`.toLowerCase();
+  if (/projector|hdmi|no signal|display|screen/.test(s)) return 'projector';
+  if (/wi-?fi|internet|network/.test(s)) return 'wifi';
+  if (/\b(door|keypad|lock|locked|code)\b/.test(s)) return 'lock';
+  if (/laptop|computer|clicker|slides?\b/.test(s)) return 'laptop';
+  if (/\b(lights?|lamp|bulb)\b/.test(s)) return 'lightbulb';
+  if (/temperature|heating|cooling|\bac\b|air con/.test(s)) return 'thermometer';
+  if (/outlet|power|plug|charg/.test(s)) return 'plug';
+  if (/contact|call|phone|\bwho\b/.test(s)) return 'phone';
+  return 'help';
+}
+
+const presetDetail = (p: FaqPreset) => (p.detail ? (p.source === 'faq' ? 'FAQ' : p.detail) : 'FAQ');
+const incidentKind = (status: IncidentView['status']): StatusKind => (status === 'RESOLVED' ? 'success' : 'attention');
+
 export default function Chat() {
+  const router = useRouter();
+  // Back only when there is somewhere to go. Read after mount so the server render and hydration match.
+  const [canGoBack, setCanGoBack] = useState(false);
+  useEffect(() => {
+    setCanGoBack(router.canGoBack());
+  }, [router]);
   const { session: ref } = useLocalSearchParams<{ session?: string }>();
   const [room, setRoom] = useState<PublicSpace | null>(null);
   const [spaceError, setSpaceError] = useState<string | null>(null);
@@ -91,9 +136,6 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [pip, setPip] = useState<PipState>('idle');
-  const [bandW, setBandW] = useState(0);
-  // Horizontal range = half the band minus Pip's width; vertical is tiny. Stable object so Pip's roam effect doesn't restart.
-  const bandRoam = useMemo(() => ({ x: Math.max(0, bandW / 2 - 36), y: 4 }), [bandW]);
   const [sound, setSound] = useState(false);
   const soundRef = useRef(sound);
   soundRef.current = sound;
@@ -191,7 +233,7 @@ export default function Chat() {
           { id: nextId(), kind: 'pip', text: `Ticket ${json.incident.key} is saved${json.backend === 'local' ? ' in the local demo store' : ''} with status ${json.incident.status}. Staff haven’t confirmed it yet — I’ll only say help is coming once they do.` },
         );
       } else {
-        const res = await fetch('/api/actions/portal-update', {
+        const res = await fetch(a.kind === 'MAINTENANCE_CALL' ? '/api/actions/call' : '/api/actions/portal-update', {
           method: 'POST',
           headers: visitorHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ actionId: a.actionId, locationId: spaceId, incidentKey: a.incidentKey, summary: a.summary ?? lastProblem.current }),
@@ -232,91 +274,158 @@ export default function Chat() {
     setTimeout(tick, 3000);
   }
 
+  // Before the first message the presets are the welcome grid; after it they shrink to a chip row above the composer.
+  const started = items.some((i) => i.kind === 'user');
+  const back = canGoBack ? () => router.back() : undefined;
+
   if (locked) {
     return (
-      <View style={[styles.root, { justifyContent: 'center', padding: space.lg, gap: space.md }]}>
-        <Card>
-          <Badge label="NFC tap required" tone="warn" />
-          <Text style={text.h2}>Tap the SIGNAL chip in {locked}</Text>
-          <Text style={text.body}>This helper only opens from a tap on the chip in this space. Hold your phone near the tag to start.</Text>
-          <Text style={text.muted}>Already tapped? Your tap session lasts 30 minutes — tap again for a fresh one.</Text>
-        </Card>
+      <View style={styles.root}>
+        <View style={styles.top}>
+          <SignalHeader onBack={back} />
+        </View>
+        <View style={styles.lockedBody}>
+          <GlassCard style={styles.lockedCard}>
+            <IconWell name="nfc" tone="accent" size={64} />
+            <View>
+              <Badge label="NFC tap required" tone="warn" />
+            </View>
+            <Text style={[text.h2, styles.center]}>Tap the SIGNAL chip in {locked}</Text>
+            <Text style={[text.body, styles.center]}>This helper only opens from a tap on the chip in this space. Hold your phone near the tag to start.</Text>
+            <Text style={[text.muted, styles.center]}>Already tapped? Your tap session lasts 30 minutes — tap again for a fresh one.</Text>
+          </GlassCard>
+        </View>
       </View>
     );
   }
 
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.header}>
-        {/* Roaming band: Pip drifts only inside this strip above the title, never over the message list. */}
-        <View style={styles.pipBand} onLayout={(e) => setBandW(e.nativeEvent.layout.width)}>
-          <Pip state={pip} size={34} roam={bandRoam} />
-        </View>
-        <View style={styles.headerRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={text.h2}>{room?.name ?? (spaceError ? 'Unknown space' : 'Loading…')}</Text>
-          <Badge
-            label={verified ? 'Secure NFC scan checked' : via === 'operator' ? 'Operator preview (no tap)' : 'DEMO / NFC simulation'}
-            tone={verified ? 'ok' : 'warn'}
-          />
-          {spaceError ? <Text style={styles.notice}>Could not load this space: {spaceError}</Text> : null}
-        </View>
-        <Pressable
-          accessibilityRole="switch"
-          accessibilityState={{ checked: sound }}
-          accessibilityLabel="Pip sound cues"
-          onPress={() => setSound((s) => !s)}
-          style={styles.toggle}>
-          <Text style={text.muted}>{sound ? '🔊 Sound on' : '🔈 Sound off'}</Text>
-        </Pressable>
-        </View>
+      <View style={styles.top}>
+        <SignalHeader
+          onBack={back}
+          right={
+            <HeaderIconButton
+              accessibilityRole="switch"
+              accessibilityState={{ checked: sound }}
+              accessibilityLabel="Pip sound cues"
+              onPress={() => setSound((s) => !s)}>
+              <Glyph name={sound ? 'volume' : 'volume-off'} size={22} color={sound ? 'accentInk' : 'textSecondary'} />
+            </HeaderIconButton>
+          }
+        />
+        <LocationBlock
+          room={room?.name ?? (spaceError ? 'Unknown space' : 'Loading…')}
+          building={room?.siteName}
+          badge={
+            <Badge
+              label={verified ? 'Secure NFC scan checked' : via === 'operator' ? 'Operator preview (no tap)' : 'DEMO / NFC simulation'}
+              tone={verified ? 'ok' : 'warn'}
+            />
+          }>
+          {spaceError ? <Text style={styles.errorText}>Could not load this space: {spaceError}</Text> : null}
+        </LocationBlock>
       </View>
       <FlatList
         data={items}
         keyExtractor={(i) => i.id}
-        contentContainerStyle={{ gap: space.sm, padding: space.md }}
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
+        ListFooterComponent={
+          !started && presets.length > 0 ? (
+            <View style={styles.welcome}>
+              <View style={styles.sectionHead}>
+                <SignalText variant="section">Common here</SignalText>
+                <SignalText variant="meta">{presets.length} topics</SignalText>
+              </View>
+              <SuggestionTiles columns={2}>
+                {presets.map((p) => (
+                  <SuggestionTile
+                    key={p.label}
+                    align="start"
+                    icon={presetIcon(p)}
+                    label={p.label}
+                    detail={presetDetail(p)}
+                    accessibilityLabel={`${p.label}${p.detail ? `, ${p.detail}` : ''}`}
+                    disabled={busy}
+                    onPress={() => send(p.message)}
+                  />
+                ))}
+              </SuggestionTiles>
+            </View>
+          ) : busy ? (
+            <View accessibilityLiveRegion="polite">
+              <ChatBubble from="assistant" leading={<PipAvatar size={34} state="thinking" />}>
+                <View style={styles.typing}>
+                  <ActivityIndicator size="small" color={palette.accent} />
+                  <SignalText variant="label" color="textSecondary">
+                    Checking…
+                  </SignalText>
+                </View>
+              </ChatBubble>
+            </View>
+          ) : undefined
+        }
         renderItem={({ item }) => {
           switch (item.kind) {
             case 'user':
               return <ChatBubble from="user">{item.text}</ChatBubble>;
             case 'pip':
               return (
-                <View style={{ alignItems: 'flex-start', gap: space.xs }}>
-                  <ChatBubble from="assistant">{item.text}</ChatBubble>
+                <View style={styles.pipMessage}>
+                  <ChatBubble from="assistant" leading={item.id === GREETING_ID ? <Pip state={pip} size={46} /> : <PipAvatar size={34} />}>
+                    {item.text}
+                  </ChatBubble>
                   {item.solvable && (
-                    <Pressable accessibilityRole="button" onPress={() => markSolved(item)} style={styles.link}>
-                      <Text style={styles.linkText}>✓ That fixed it</Text>
-                    </Pressable>
+                    <View style={styles.underBubble}>
+                      <SignalButton
+                        variant="outline"
+                        size="sm"
+                        label="That fixed it"
+                        leading={<Glyph name="check" size={16} color="accentInk" />}
+                        onPress={() => markSolved(item)}
+                      />
+                    </View>
                   )}
                 </View>
               );
             case 'notice':
-              return <Text style={styles.notice}>{item.text}</Text>;
+              return (
+                <View style={styles.notice}>
+                  <Glyph name="info" size={16} color="errorInk" />
+                  <Text style={styles.noticeText}>{item.text}</Text>
+                </View>
+              );
             case 'caption':
-              return <Text style={text.mono}>{item.text}</Text>;
+              return (
+                <View style={styles.caption}>
+                  <Glyph name="volume" size={14} color="textMuted" />
+                  <SignalText variant="meta">{item.text.replace(/^🔊\s*/, '')}</SignalText>
+                </View>
+              );
             case 'source':
               return (
-                <Card style={{ padding: space.sm }}>
-                  <Text style={text.muted}>
-                    From memory · {item.title}
-                    {item.occurredAt ? ` · ${item.occurredAt}` : ''}
-                  </Text>
-                  <Text style={text.body}>{item.text}</Text>
-                </Card>
+                <Callout icon="file" title={`From memory · ${item.title}`}>
+                  {item.occurredAt ? <SignalText variant="meta">{item.occurredAt}</SignalText> : null}
+                  <SignalText variant="body">{item.text}</SignalText>
+                </Callout>
               );
             case 'incident':
               return (
-                <Card style={{ padding: space.sm }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={text.h2}>Ticket {item.incident.key}</Text>
-                    <Badge label={item.incident.status} tone={item.incident.status === 'RESOLVED' ? 'ok' : 'warn'} />
-                  </View>
-                  <Text style={text.body}>{item.incident.summary}</Text>
-                  <Text style={text.muted}>
+                <Callout
+                  icon="ticket"
+                  title={`Ticket ${item.incident.key}`}
+                  aside={<StatusChip kind={incidentKind(item.incident.status)} label={item.incident.status} live={false} />}>
+                  <SignalText variant="body">{item.incident.summary}</SignalText>
+                  <SignalText variant="meta">
                     {item.relation === 'created' ? 'Created just now' : 'On record'} · updated {item.incident.updatedAt} · source: incident database
-                  </Text>
-                  {item.incident.lastNote ? <Text style={text.mono}>Latest note: {item.incident.lastNote}</Text> : null}
-                </Card>
+                  </SignalText>
+                  {item.incident.lastNote ? (
+                    <SignalText variant="meta" color="textSecondary" style={styles.note}>
+                      Latest note: {item.incident.lastNote}
+                    </SignalText>
+                  ) : null}
+                </Callout>
               );
             case 'approval':
               if (item.status === 'offered' || item.status === 'working') {
@@ -334,67 +443,91 @@ export default function Chat() {
                 );
               }
               return (
-                <Card style={{ padding: space.sm }}>
-                  {item.status === 'done' && <Text style={text.body}>✓ Approved</Text>}
-                  {item.status === 'declined' && <Text style={text.muted}>Declined — nothing was sent.</Text>}
-                </Card>
+                <View style={styles.approvalDone}>
+                  <Glyph name={item.status === 'done' ? 'check' : 'x'} size={16} color="textSecondary" />
+                  <SignalText variant="label" color="textSecondary">
+                    {item.status === 'done' ? 'Approved' : 'Declined — nothing was sent.'}
+                  </SignalText>
+                </View>
               );
             case 'action':
               return <ActionCard attempt={item.attempt} />;
-            case 'seen':
+            case 'seen': {
+              const resolved = item.incident.status === 'RESOLVED';
               return (
-                <Card style={{ padding: space.sm }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.sm }}>
-                    <Text style={[text.h2, { flex: 1 }]}>Seen before · {item.incident.key}</Text>
-                    <Badge label={item.incident.status} tone={item.incident.status === 'RESOLVED' ? 'ok' : 'warn'} />
-                  </View>
-                  <Text style={text.body}>{item.incident.summary}</Text>
-                  <Text style={text.muted}>
+                <Callout
+                  tone={resolved ? 'success' : 'attention'}
+                  icon={resolved ? 'check' : 'history'}
+                  title={`Seen before · ${item.incident.key}`}
+                  aside={<StatusChip kind={incidentKind(item.incident.status)} label={item.incident.status} live={false} />}>
+                  <SignalText variant="body">{item.incident.summary}</SignalText>
+                  <SignalText variant="meta" color="textSecondary">
                     {item.assetName} · reported {item.agoText} · source: incident database
-                  </Text>
-                  {item.incident.lastNote ? <Text style={text.mono}>Latest note: {item.incident.lastNote}</Text> : null}
-                </Card>
+                  </SignalText>
+                  {item.incident.lastNote ? (
+                    <SignalText variant="meta" color="textSecondary" style={styles.note}>
+                      Latest note: {item.incident.lastNote}
+                    </SignalText>
+                  ) : null}
+                </Callout>
               );
+            }
             case 'escalation':
               return (
-                <Card style={{ padding: space.sm }}>
-                  <Text style={text.h2}>{item.urgent ? 'Contact staff now' : 'Reach a person'}</Text>
-                  <Text style={text.muted}>{item.reason}. These open on your phone — SIGNAL doesn’t call or email for you.</Text>
+                <Callout
+                  tone={item.urgent ? 'attention' : 'neutral'}
+                  icon={item.urgent ? 'alert-triangle' : 'person'}
+                  title={item.urgent ? 'Contact staff now' : 'Reach a person'}
+                  inset={false}>
+                  <SignalText variant="label" color="textSecondary" style={styles.regular}>
+                    {item.reason}. These open on your phone — SIGNAL doesn’t call or email for you.
+                  </SignalText>
                   {item.options.map((o) => (
-                    <Pressable key={o.href} accessibilityRole="link" accessibilityLabel={`${o.label}${o.detail ? `, ${o.detail}` : ''}`} onPress={() => Linking.openURL(o.href)} style={styles.link}>
-                      <Text style={styles.linkText}>
-                        {o.kind === 'call' ? '📞' : o.kind === 'email' ? '✉️' : '↗'} {o.label}
-                      </Text>
-                      {o.detail ? <Text style={text.mono}>{o.detail}</Text> : null}
-                    </Pressable>
+                    <ActionRow
+                      key={o.href}
+                      accessibilityRole="link"
+                      accessibilityLabel={`${o.label}${o.detail ? `, ${o.detail}` : ''}`}
+                      icon={o.kind === 'call' ? 'phone' : o.kind === 'email' ? 'mail' : 'external'}
+                      iconTone={o.kind === 'call' && item.urgent ? 'accent' : 'neutral'}
+                      title={o.label}
+                      detail={o.detail}
+                      onPress={() => Linking.openURL(o.href)}
+                    />
                   ))}
-                </Card>
+                </Callout>
               );
           }
         }}
       />
-      {presets.length > 0 && (
-        <View style={styles.presets}>
-          <Text style={text.muted}>Common here</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
-            {presets.map((p) => (
-              <Pressable
-                key={p.label}
-                accessibilityRole="button"
-                accessibilityLabel={`${p.label}${p.detail ? `, ${p.detail}` : ''}`}
-                disabled={busy}
-                onPress={() => send(p.message)}
-                style={({ pressed }) => [styles.preset, pressed && { opacity: 0.7 }]}>
-                <Text style={styles.presetText} numberOfLines={2}>
-                  {p.label}
-                </Text>
-                {p.detail ? <Text style={text.mono}>{p.source === 'faq' ? 'FAQ' : p.detail}</Text> : <Text style={text.mono}>FAQ</Text>}
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-      <View style={styles.composer}>
+      <View style={styles.bottom}>
+        {started && presets.length > 0 ? (
+          <View style={styles.presets}>
+            <SignalText variant="meta" style={styles.presetsLabel}>
+              Common here
+            </SignalText>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetRow}>
+              {presets.map((p) => (
+                <Pressable
+                  key={p.label}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${p.label}${p.detail ? `, ${p.detail}` : ''}`}
+                  disabled={busy}
+                  onPress={() => send(p.message)}
+                  style={({ pressed }) => [styles.preset, pressed && styles.presetPressed, busy && styles.presetBusy]}>
+                  <Glyph name={presetIcon(p)} size={18} />
+                  <View style={styles.presetText}>
+                    <Text style={styles.presetLabel} numberOfLines={2}>
+                      {p.label}
+                    </Text>
+                    <Text style={styles.presetDetail} numberOfLines={1}>
+                      {presetDetail(p)}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
         <Composer
           value={input}
           onChangeText={setInput}
@@ -415,40 +548,107 @@ const STATE_COPY: Record<string, string> = {
   PENDING_REVIEW: 'Couldn’t confirm the update — flagged for staff review.',
 };
 
+const CALL_STATE_COPY: Record<string, string> = {
+  PENDING: 'Placing the call…',
+  INITIATED: 'Call started — waiting for the outcome. Nobody has been notified yet.',
+  VERIFIED: 'The automated call was answered and played your report. Staff haven’t acknowledged the ticket yet.',
+  FAILED: 'The call did not go through. Staff were not notified.',
+  PENDING_REVIEW: 'Couldn’t confirm the call — flagged for review.',
+};
+
 function ActionCard({ attempt }: { attempt: Attempt }) {
-  const tone = attempt.state === 'VERIFIED' ? 'ok' : attempt.state === 'FAILED' ? 'alert' : 'warn';
+  const isCall = attempt.kind === 'MAINTENANCE_CALL';
   const kind: StatusKind =
     attempt.state === 'VERIFIED' ? 'success' : attempt.state === 'FAILED' ? 'failure' : attempt.state === 'PENDING_REVIEW' ? 'attention' : 'pending';
+  // Green only for VERIFIED (read back / answered); in-flight states stay neutral.
+  const tone: CalloutTone = kind === 'pending' ? 'neutral' : kind;
+  const icon: GlyphName = kind === 'success' ? 'check' : kind === 'failure' ? 'x' : kind === 'attention' ? 'alert' : isCall ? 'phone' : 'clock';
   return (
-    <Card style={{ padding: space.sm }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.sm }}>
-        <StatusMark kind={kind} />
-        <Text style={[text.h2, { flex: 1 }]}>Portal update · {attempt.incidentKey}</Text>
-        <Badge label={attempt.state} tone={tone} />
-      </View>
-      <Text style={text.body}>{STATE_COPY[attempt.state] ?? attempt.state}</Text>
-      {attempt.evidence ? <Text style={text.mono}>Evidence: {attempt.evidence}</Text> : null}
-      {attempt.error ? <Text style={styles.notice}>{attempt.error}</Text> : null}
+    <Callout
+      tone={tone}
+      icon={icon}
+      title={`${isCall ? 'Maintenance call' : 'Portal update'} · ${attempt.incidentKey}`}
+      aside={<StatusChip kind={kind} label={attempt.state} live={false} />}>
+      <SignalText variant="body">{(isCall ? CALL_STATE_COPY : STATE_COPY)[attempt.state] ?? attempt.state}</SignalText>
+      {attempt.evidence ? (
+        <SignalText variant="meta" color="textSecondary" style={styles.note}>
+          Evidence: {attempt.evidence}
+        </SignalText>
+      ) : null}
+      {attempt.error ? <Text style={styles.errorText}>{attempt.error}</Text> : null}
       {attempt.liveViewUrl && attempt.state === 'INITIATED' ? (
-        <Pressable accessibilityRole="link" onPress={() => Linking.openURL(attempt.liveViewUrl!)} style={styles.link}>
-          <Text style={styles.linkText}>Watch Anchor live ↗</Text>
+        <Pressable accessibilityRole="link" onPress={() => Linking.openURL(attempt.liveViewUrl!)} style={({ pressed }) => [styles.link, pressed && styles.linkPressed]}>
+          <Text style={styles.linkText}>Watch Anchor live</Text>
+          <Glyph name="external" size={16} color="accentInk" />
         </Pressable>
       ) : null}
-    </Card>
+    </Callout>
   );
 }
 
+const chipShadow = '0 2px 8px rgba(80,58,38,0.08)';
+
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper, width: '100%', maxWidth: 640, alignSelf: 'center' },
-  header: { gap: space.xs, padding: space.md, borderBottomWidth: 1, borderBottomColor: colors.line },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  pipBand: { height: 70, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  notice: { color: colors.alert, fontSize: 13, lineHeight: 18 },
-  link: { minHeight: 36, justifyContent: 'center', paddingHorizontal: space.sm },
-  linkText: { color: colors.ink, fontWeight: '700', textDecorationLine: 'underline' },
-  toggle: { minHeight: 44, justifyContent: 'center', paddingHorizontal: space.sm },
-  composer: { padding: space.md },
-  presets: { paddingHorizontal: space.md, paddingTop: space.sm, gap: space.xs },
-  preset: { maxWidth: 240, minHeight: 44, paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, justifyContent: 'center' },
-  presetText: { color: colors.ink, fontSize: 14, lineHeight: 19, fontWeight: '600' },
+  root: { flex: 1, backgroundColor: palette.canvas, width: '100%', maxWidth: 480, alignSelf: 'center' },
+  top: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10, gap: 8 },
+  list: { flex: 1 },
+  listContent: { gap: 12, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 16 },
+  welcome: { gap: 12, marginTop: 6 },
+  sectionHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingHorizontal: 2 },
+  pipMessage: { gap: 8 },
+  underBubble: { paddingLeft: 44 },
+  typing: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  notice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: radius.well,
+    backgroundColor: palette.errorSoft,
+  },
+  noticeText: { flex: 1, color: palette.errorInk, fontSize: 13, lineHeight: 18 },
+  errorText: { color: palette.errorInk, fontSize: 13, lineHeight: 18 },
+  caption: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', gap: 6, paddingVertical: 2 },
+  note: { borderLeftWidth: 2, borderLeftColor: palette.accentLine, paddingLeft: 8 },
+  approvalDone: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    backgroundColor: palette.surfaceSunken,
+  },
+  regular: { fontWeight: '400' },
+  link: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, minHeight: 36, paddingHorizontal: 2 },
+  linkPressed: { opacity: 0.6 },
+  linkText: { color: palette.accentInk, fontWeight: '600', fontSize: 14 },
+  bottom: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 14, gap: 8 },
+  presets: { gap: 4 },
+  presetsLabel: { paddingHorizontal: 4 },
+  presetRow: { gap: 8, paddingHorizontal: 2, paddingVertical: 6 },
+  preset: {
+    maxWidth: 240,
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceGlassStrong,
+    boxShadow: chipShadow,
+  },
+  presetPressed: { backgroundColor: palette.accentSoft, borderColor: palette.accentLine },
+  presetBusy: { opacity: 0.5 },
+  presetText: { flexShrink: 1, gap: 1 },
+  presetLabel: { color: palette.text, fontSize: 13, lineHeight: 17, fontWeight: '600' },
+  presetDetail: { color: palette.textMuted, fontSize: 11, lineHeight: 14 },
+  lockedBody: { flex: 1, justifyContent: 'center', paddingHorizontal: 16, paddingBottom: 48 },
+  lockedCard: { alignItems: 'center', gap: 12, paddingVertical: 28 },
+  center: { textAlign: 'center' },
 });

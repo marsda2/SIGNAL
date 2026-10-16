@@ -10,6 +10,7 @@ export type SignalTextProps = TextProps & {
 
 const defaultColor: Partial<Record<TypeVariant, PaletteColor>> = {
   meta: 'textMuted',
+  eyebrow: 'textMuted',
   wordmark: 'text',
 };
 
@@ -21,7 +22,7 @@ export function SignalText({ variant = 'body', color, style, ...rest }: SignalTe
       style={[
         type[variant],
         { color: palette[color ?? defaultColor[variant] ?? 'text'] },
-        variant === 'wordmark' && { textTransform: 'uppercase' },
+        (variant === 'wordmark' || variant === 'eyebrow') && { textTransform: 'uppercase' },
         // Timestamps and elapsed time use tabular numerals.
         (variant === 'meta' || variant === 'eta') && { fontVariant: ['tabular-nums'] },
         style,

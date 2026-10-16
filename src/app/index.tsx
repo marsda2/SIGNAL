@@ -1,31 +1,54 @@
 import { Link, useRouter } from 'expo-router';
-import { Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Pip } from '@/components/Pip';
-import { Button, Screen, text } from '@/components/ui';
-import { colors } from '@/constants/tokens';
+import { Glyph, SignalButton, SignalText, SignalWordmark, palette } from '@/design';
 
 const HOME_ROAM = { x: 110, y: 55 } as const; // module-level so the object is stable across renders
 
 export default function Home() {
   const router = useRouter();
   return (
-    <Screen style={{ justifyContent: 'center', maxWidth: 560, width: '100%', alignSelf: 'center' }}>
+    <ScrollView style={styles.root} contentContainerStyle={styles.page}>
+      <View style={styles.brand}>
+        <SignalWordmark size="lg" />
+      </View>
       {/* Roaming stage: Pip drifts inside this box only, so it never covers the headline or the button. */}
-      <View style={{ height: 250, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={styles.stage}>
         <Pip state="idle" size={96} roam={HOME_ROAM} />
       </View>
-      <Text style={text.h1}>Every space has a memory.</Text>
-      <Text style={text.body}>Tap. Ask. Resolve. A little help, exactly where you need it.</Text>
-      <Button label="Open the demo room" onPress={() => router.push('/t')} />
-      <View style={{ flexDirection: 'row', gap: 16 }}>
-        <Link href="/admin" style={{ color: colors.sea, fontWeight: '600' }}>
+      <View style={styles.copy}>
+        <SignalText variant="eyebrow" color="textSecondary">
+          Tap. Ask. Resolve.
+        </SignalText>
+        <SignalText variant="display" accessibilityRole="header">
+          Every space has a memory.
+        </SignalText>
+        <SignalText variant="hero" color="textSecondary">
+          A little help, exactly where you need it.
+        </SignalText>
+      </View>
+      <SignalButton label="Open the demo room" trailing={<Glyph name="arrow-right" color="onAccent" />} onPress={() => router.push('/t')} />
+      <View style={styles.links}>
+        <Link href="/admin" style={styles.link}>
           Facilities view
         </Link>
-        <Link href="/demo/maintenance" style={{ color: colors.sea, fontWeight: '600' }}>
+        <Text style={styles.sep}>·</Text>
+        <Link href="/demo/maintenance" style={styles.link}>
           Demo maintenance portal
         </Link>
       </View>
-    </Screen>
+    </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: palette.canvas },
+  page: { flexGrow: 1, justifyContent: 'center', width: '100%', maxWidth: 480, alignSelf: 'center', paddingHorizontal: 20, paddingVertical: 28, gap: 20 },
+  brand: { alignItems: 'flex-start' },
+  stage: { height: 230, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
+  copy: { gap: 10 },
+  links: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  link: { color: palette.accentInk, fontWeight: '600', fontSize: 14, paddingVertical: 10 },
+  sep: { color: palette.textMuted },
+});

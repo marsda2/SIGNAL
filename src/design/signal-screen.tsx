@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions, type ViewStyle } from 'react-native';
+import { ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { gradients, layout, palette } from './tokens';
+import { layout, palette } from './tokens';
 
 export type SignalScreenProps = {
   children: ReactNode;
@@ -14,22 +14,20 @@ export type SignalScreenProps = {
 };
 
 /**
- * Warm ivory gradient field + centered single column (max 440px) with safe-area padding.
+ * Warm ivory field + centered single column (max 440px) with safe-area padding.
+ * Flat fill (no gradient, no window measurement) so server-rendered and hydrated styles match.
  * Keeps the focused mobile composition on tablet/web. No fake status bars, notches or phone frames.
- * Wrap every visitor-facing screen in this.
  */
 export function SignalScreen({ children, scroll = true, bottomInset = 0, contentStyle }: SignalScreenProps) {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const horizontal = width < layout.compactBreakpoint ? layout.screenPaddingCompact : layout.screenPadding;
 
   const column: ViewStyle = {
     width: '100%',
     maxWidth: layout.maxWidth,
     alignSelf: 'center',
-    paddingTop: insets.top + 16,
+    paddingTop: insets.top + 12,
     paddingBottom: insets.bottom + 20 + bottomInset,
-    paddingHorizontal: horizontal,
+    paddingHorizontal: layout.screenPaddingCompact,
     gap: layout.stackGap,
     ...contentStyle,
   };
@@ -37,10 +35,7 @@ export function SignalScreen({ children, scroll = true, bottomInset = 0, content
   return (
     <View style={styles.root}>
       {scroll ? (
-        <ScrollView
-          contentContainerStyle={[styles.grow, column]}
-          keyboardShouldPersistTaps="handled"
-          contentInsetAdjustmentBehavior="never">
+        <ScrollView contentContainerStyle={[styles.grow, column]} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="never">
           {children}
         </ScrollView>
       ) : (
@@ -51,10 +46,6 @@ export function SignalScreen({ children, scroll = true, bottomInset = 0, content
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: palette.canvas,
-    backgroundImage: gradients.screen,
-  },
+  root: { flex: 1, backgroundColor: palette.canvas },
   grow: { flexGrow: 1 },
 });

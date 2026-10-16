@@ -2,8 +2,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
+import { Pip } from '@/components/Pip';
 import { Badge, Button, Card, Screen, text } from '@/components/ui';
 import { colors, space } from '@/constants/tokens';
+import { IconWell, SignalHeader } from '@/design';
 import { tapQuery, useTapRedeem, type TapDiag } from '@/lib/nfc/client';
 import type { TapStatus } from '@/lib/nfc/types';
 import { saveVisitorSession, visitorHeaders } from '@/lib/visitor-session';
@@ -39,6 +41,11 @@ export default function TapLanding() {
   const hasChipData = shapes.length > 0;
   const operator = Boolean(visitorHeaders()['x-demo-secret']);
   const [showDetails, setShowDetails] = useState(false);
+  // Back only when there is somewhere to go. Read after mount so the server render and hydration match.
+  const [canGoBack, setCanGoBack] = useState(false);
+  useEffect(() => {
+    setCanGoBack(router.canGoBack());
+  }, [router]);
 
   async function onContinue() {
     const r = await redeem();
@@ -58,7 +65,11 @@ export default function TapLanding() {
   const http = state.phase === 'done' || state.phase === 'error' ? state.http : undefined;
 
   return (
-    <Screen style={{ maxWidth: 560, width: '100%', alignSelf: 'center' }}>
+    <Screen style={{ maxWidth: 480, width: '100%', alignSelf: 'center', paddingTop: 6 }}>
+      <SignalHeader onBack={canGoBack ? () => router.back() : undefined} />
+      <View style={{ alignItems: 'center', paddingVertical: 4 }}>
+        {hasChipData ? <Pip state={state.phase === 'pending' ? 'thinking' : 'idle'} size={84} /> : <IconWell name="nfc" tone="accent" size={84} />}
+      </View>
       <Card>
         {result ? <Badge label={BADGE[result.status].label} tone={BADGE[result.status].tone} /> : null}
         <Text style={text.h1}>{hasChipData ? 'Need a hand here?' : 'Tap the SIGNAL chip'}</Text>

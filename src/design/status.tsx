@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { GlassCard } from './glass-card';
 import { Glyph, type GlyphName } from './glyph';
 import { SignalText } from './signal-text';
-import { layout, palette, radius } from './tokens';
+import { layout, palette, radius, type PaletteColor } from './tokens';
 
 /**
  * success = verified/confirmed only · attention = unresolved, needs action · failure = needs attention · pending = in flight.
@@ -12,19 +12,19 @@ import { layout, palette, radius } from './tokens';
  */
 export type StatusKind = 'success' | 'attention' | 'failure' | 'pending';
 
-const kinds: Record<StatusKind, { bg: string; ink: keyof typeof palette; glyph: GlyphName; label: string }> = {
-  success: { bg: palette.successSoft, ink: 'successInk', glyph: 'check', label: 'Done' },
+const kinds: Record<StatusKind, { bg: string; ink: PaletteColor; glyph: GlyphName; label: string }> = {
+  success: { bg: palette.success, ink: 'onAccent', glyph: 'check', label: 'Done' },
   attention: { bg: palette.accentSoft, ink: 'accentInk', glyph: 'alert', label: 'Needs attention' },
-  failure: { bg: palette.accentSoft, ink: 'errorInk', glyph: 'alert', label: 'Failed' },
-  pending: { bg: 'rgba(92,83,75,0.12)', ink: 'textSecondary', glyph: 'dots', label: 'In progress' },
+  failure: { bg: palette.errorSoft, ink: 'errorInk', glyph: 'x', label: 'Failed' },
+  pending: { bg: palette.surfaceSunken, ink: 'textSecondary', glyph: 'dots', label: 'In progress' },
 };
 
-/** 24px circle with a glyph. Always paired with a readable label — color is never the only signal. */
-export function StatusMark({ kind }: { kind: StatusKind }) {
+/** 24px filled circle with a glyph. Always paired with a readable label — color is never the only signal. */
+export function StatusMark({ kind, size = layout.statusIcon }: { kind: StatusKind; size?: number }) {
   const k = kinds[kind];
   return (
-    <View accessible accessibilityLabel={k.label} style={[styles.mark, { backgroundColor: k.bg }]}>
-      <Glyph name={k.glyph} size={kind === 'pending' ? 8 : 14} color={k.ink} />
+    <View accessible accessibilityLabel={k.label} style={[styles.mark, { width: size, height: size, borderRadius: size / 2, backgroundColor: k.bg }]}>
+      <Glyph name={k.glyph} size={Math.round(size * 0.6)} color={k.ink} strokeWidth={kind === 'pending' ? 3.2 : 3} />
     </View>
   );
 }
@@ -42,7 +42,9 @@ export function StatusRow({ kind, title, detail, time }: StatusRowProps) {
     <View style={styles.row}>
       <StatusMark kind={kind} />
       <View style={styles.rowText}>
-        <SignalText variant="label">{title}</SignalText>
+        <SignalText variant="label" color={kind === 'success' ? 'successInk' : 'text'} style={styles.rowTitle}>
+          {title}
+        </SignalText>
         {detail ? <SignalText variant="meta">{detail}</SignalText> : null}
       </View>
       {time ? <SignalText variant="meta">{time}</SignalText> : null}
@@ -69,16 +71,23 @@ export function StatusCard({ title, children }: { title: string; children: React
   );
 }
 
-/** Small pill: dot + readable text ("Maintenance confirmed"). Only show success after real confirmation. */
-export function StatusChip({ kind = 'success', label }: { kind?: StatusKind; label: string }) {
-  const dot = kind === 'success' ? palette.success : kind === 'pending' ? palette.textMuted : palette.accent;
+const chipTones: Record<StatusKind, { bg: string; line: string; dot: string; ink: PaletteColor }> = {
+  success: { bg: palette.successSoft, line: palette.successLine, dot: palette.success, ink: 'successInk' },
+  attention: { bg: palette.accentSoft, line: palette.accentLine, dot: palette.accent, ink: 'accentInk' },
+  failure: { bg: palette.errorSoft, line: 'rgba(163,50,40,0.18)', dot: palette.errorInk, ink: 'errorInk' },
+  pending: { bg: palette.surfaceSunken, line: palette.hairline, dot: palette.textMuted, ink: 'textSecondary' },
+};
+
+/** Small pill: dot + readable text ("Maintenance confirmed", "OPEN"). Only show success after real confirmation. */
+export function StatusChip({ kind = 'success', label, live = true }: { kind?: StatusKind; label: string; live?: boolean }) {
+  const t = chipTones[kind];
   return (
     <View
       accessibilityRole="text"
-      accessibilityLiveRegion="polite"
-      style={[styles.chip, kind === 'success' && { backgroundColor: 'rgba(224,239,220,0.8)' }]}>
-      <View style={[styles.dot, { backgroundColor: dot }]} />
-      <SignalText variant="label" color={kind === 'success' ? 'successInk' : 'text'}>
+      accessibilityLiveRegion={live ? 'polite' : 'none'}
+      style={[styles.chip, { backgroundColor: t.bg, borderColor: t.line }]}>
+      <View style={[styles.dot, { backgroundColor: t.dot }]} />
+      <SignalText variant="meta" color={t.ink} style={styles.chipText}>
         {label}
       </SignalText>
     </View>
@@ -86,13 +95,7 @@ export function StatusChip({ kind = 'success', label }: { kind?: StatusKind; lab
 }
 
 const styles = StyleSheet.create({
-  mark: {
-    width: layout.statusIcon,
-    height: layout.statusIcon,
-    borderRadius: layout.statusIcon / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  mark: { alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   row: {
     minHeight: layout.statusRowMinHeight,
     flexDirection: 'row',
@@ -101,20 +104,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   rowText: { flex: 1, minWidth: 0, gap: 2 },
+  rowTitle: { fontWeight: '600' },
   list: { marginTop: 4 },
   divider: { borderTopWidth: 1, borderTopColor: palette.divider },
   chip: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    minHeight: layout.minTouch - 8,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceGlass,
   },
-  dot: { width: 10, height: 10, borderRadius: 5 },
+  chipText: { fontWeight: '600' },
+  dot: { width: 7, height: 7, borderRadius: 4 },
 });

@@ -7,33 +7,44 @@ import { palette, radius, shadows } from './tokens';
 export type ChatBubbleProps = {
   from: 'assistant' | 'user';
   children: ReactNode;
+  /** Assistant only: avatar shown to the left of the bubble (Pip). */
+  leading?: ReactNode;
 };
 
 /**
- * Assistant = warm glass, left. User = muted taupe, right. Max ~85% of the column.
+ * Assistant = near-white card on the left (with Pip beside it). User = soft peach on the right. Max ~85% of the column.
  * Keep diagnostics in dedicated cards beneath the chat — never expose chain-of-thought or raw tool output.
  */
-export function ChatBubble({ from, children }: ChatBubbleProps) {
+export function ChatBubble({ from, children, leading }: ChatBubbleProps) {
   const user = from === 'user';
-  return (
-    <View style={[styles.base, user ? styles.user : styles.assistant]}>
+  const bubble = (
+    <View style={[styles.base, user ? styles.user : styles.assistant, !user && leading ? styles.withAvatar : null]}>
       {typeof children === 'string' ? <SignalText variant="body">{children}</SignalText> : children}
+    </View>
+  );
+  if (user || !leading) return bubble;
+  return (
+    <View style={styles.row}>
+      {leading}
+      {bubble}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  base: { maxWidth: '85%', paddingVertical: 12, paddingHorizontal: 16 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, maxWidth: '100%' },
+  base: { maxWidth: '85%', paddingVertical: 11, paddingHorizontal: 15 },
+  withAvatar: { flexShrink: 1, maxWidth: '82%' },
   assistant: {
     alignSelf: 'flex-start',
-    backgroundColor: palette.surfaceGlass,
+    backgroundColor: palette.surfaceGlassStrong,
     borderWidth: 1,
     borderColor: palette.border,
     boxShadow: shadows.soft,
-    borderTopLeftRadius: radius.bubble,
+    borderTopLeftRadius: radius.bubbleTail,
     borderTopRightRadius: radius.bubble,
     borderBottomRightRadius: radius.bubble,
-    borderBottomLeftRadius: radius.bubbleTail,
+    borderBottomLeftRadius: radius.bubble,
   },
   user: {
     alignSelf: 'flex-end',

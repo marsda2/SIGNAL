@@ -18,21 +18,29 @@ export function Button({ label, onPress, disabled, testID }: { label: string; on
       testID={testID}
       accessibilityLabel={label}
       accessibilityRole="button"
+      accessibilityState={{ disabled: !!disabled }}
       onPress={onPress}
       disabled={disabled}
-      style={({ pressed }) => [styles.button, (pressed || disabled) && { opacity: 0.6 }]}>
+      style={({ pressed }) => [styles.button, pressed && styles.buttonPressed, disabled && { opacity: 0.5 }]}>
       <Text style={styles.buttonText}>{label}</Text>
     </Pressable>
   );
 }
 
+const BADGE = {
+  neutral: { bg: palette.surfaceSunken, line: palette.hairline, dot: palette.textMuted, fg: palette.text },
+  ok: { bg: palette.successSoft, line: palette.successLine, dot: palette.success, fg: palette.successInk },
+  warn: { bg: palette.accentSoft, line: palette.accentLine, dot: palette.accent, fg: palette.accentInk },
+  alert: { bg: palette.errorSoft, line: 'rgba(163,50,40,0.18)', dot: palette.errorInk, fg: palette.errorInk },
+} as const;
+
 export function Badge({ label, tone = 'neutral' }: { label: string; tone?: 'neutral' | 'ok' | 'warn' | 'alert' }) {
-  // green = verified success only, orange = unresolved/attention, red = failure
-  const bg = { neutral: colors.line, ok: colors.successSoft, warn: colors.warning, alert: colors.alert }[tone];
-  const fg = { neutral: colors.ink, ok: colors.successInk, warn: palette.accentInk, alert: colors.surface }[tone];
+  // green = verified success only, orange = unresolved/attention, red = failure. Dot + words, never color alone.
+  const t = BADGE[tone];
   return (
-    <View style={[styles.badge, { backgroundColor: bg }]}>
-      <Text style={{ color: fg, fontSize: 12, lineHeight: 18, fontWeight: '600' }}>{label}</Text>
+    <View style={[styles.badge, { backgroundColor: t.bg, borderColor: t.line }]}>
+      <View style={[styles.dot, { backgroundColor: t.dot }]} />
+      <Text style={{ color: t.fg, fontSize: 12, lineHeight: 16, fontWeight: '600' }}>{label}</Text>
     </View>
   );
 }
@@ -42,7 +50,7 @@ export const text = StyleSheet.create({
   h2: { color: colors.ink, ...type.section },
   body: { color: colors.ink, ...type.body },
   muted: { color: colors.muted, fontSize: 14, lineHeight: 20, fontWeight: '400' },
-  mono: { color: colors.muted, fontSize: 12, lineHeight: 18, fontFamily: 'monospace' as never },
+  mono: { color: palette.textMuted, fontSize: 12, lineHeight: 18, fontFamily: 'monospace' as never },
 });
 
 const styles = StyleSheet.create({
@@ -53,19 +61,30 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     borderWidth: 1,
     borderRadius: radius.lg,
-    padding: space.md,
-    gap: space.sm,
+    padding: 18,
+    gap: 10,
     boxShadow: shadows.soft,
   },
   button: {
     backgroundColor: colors.signal,
     borderRadius: 999,
-    minHeight: 48,
+    minHeight: 50,
     paddingHorizontal: space.lg,
     alignItems: 'center',
     justifyContent: 'center',
     boxShadow: shadows.primary,
   },
-  buttonText: { color: colors.ink, ...type.button },
-  badge: { alignSelf: 'flex-start', borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
+  buttonPressed: { backgroundColor: palette.accentPressed, boxShadow: shadows.primaryPressed, transform: [{ scale: 0.985 }] },
+  buttonText: { color: palette.onAccent, ...type.button },
+  badge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 99,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  dot: { width: 7, height: 7, borderRadius: 4 },
 });

@@ -2,7 +2,110 @@ import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Platform, StyleSheet, Text, View } from 'react-native';
 
 import type { PipState } from '@/lib/agent/contracts';
-import { colors } from '@/constants/tokens';
+import { palette } from '@/design/tokens';
+
+/**
+ * Pip, styled after "Sunee" from smontlouis/bible-strong-avatar-lab: a flattened apricot sphere ringed by eight
+ * smaller spheres, two dark pill eyes painted on the face, and a head that turns in 3D between expressions.
+ *
+ * The renderer here is original (plain Views + Animated, works on web and native). The expression poses and
+ * animation timelines below are transcribed (rounded) from the lab's default studio document, which is AGPL-3.0 —
+ * review before shipping in a closed-source build (AGENTS.md "Avoid").
+ */
+const COLORS = { body: '#e69a5c', eyes: '#111316' } as const;
+
+/** Body ellipsoid semi-axes (studio units): wide and tall, but shallow, so eyes slide a lot when the head turns. */
+const BODY = { a: 183 / 2, b: 185.5 / 2, c: 50 };
+/** Sun rays: [x, y, diameter] around the body, y down, z slightly behind the face. */
+const RAYS: readonly [number, number, number][] = [
+  [-94.5, -95.4, 60],
+  [-6.4, -134, 59.6],
+  [89.1, -114.3, 81.6],
+  [132.2, -11.7, 70.1],
+  [-138.1, -1.2, 61.9],
+  [-103.3, 92.4, 61.1],
+  [-2.5, 133.1, 61.7],
+  [109.5, 84, 64.1],
+];
+const RAY_Z = -10;
+/** Studio units shown across the component box; rays overflow the box slightly so the face stays readable at 34px. */
+const VIEW_UNITS = 280;
+
+/**
+ * Expression = [headX (pitch, + up), headY (yaw, + right), headZ (roll, + clockwise), widthL, widthR, heightL, heightR,
+ * spacing (between eye centres), posYL, posYR (+ down), angleL, angleR (+ clockwise)]. Degrees / studio units.
+ */
+type Expr = readonly [number, number, number, number, number, number, number, number, number, number, number, number];
+
+const EXPRESSIONS = {
+  neutral: [0, 0, 0, 20, 20, 50, 50, 35, -7, -7, 0, 0],
+  'upward-side-glance': [7.3, 27.8, -16.1, 22.5, 22.5, 42.4, 42.4, 54.3, -20.5, -20.5, 0, 0],
+  'downward-gaze': [-15.1, 0.1, -14.5, 22.4, 22.4, 54.6, 54.6, 57.7, 0, 0, 0, 0],
+  'skeptical-right': [-16.5, -3.8, -13.7, 23.1, 49.9, 57.7, 12.4, 56.3, 0, 0, 0, 0],
+  'small-attentive': [-4.2, 14.4, 11.2, 22.1, 22.1, 39.6, 39.6, 50.9, 0, 0, 0, 0],
+  'wide-downward-gaze': [-19.2, 15.2, 11.8, 52.1, 53.1, 51.5, 52.2, 69.5, 0, 0, 0, 0],
+  'surprised-left': [2.9, -16.1, -20.9, 51.7, 51.7, 51.7, 51.7, 70.9, 0, 0, 0, 0],
+  'sleepy-squint': [3.4, 13.2, 9.0, 51.8, 51.8, 13.0, 13.0, 63.9, 0, 0, 0, 0],
+  'angry-right': [8.1, 17.6, -11.1, 20.9, 20.9, 40.4, 40.4, 52.1, 0, 0, -30.9, 28.8],
+  'curious-left': [-12.3, -17.6, 5.9, 20.6, 20.6, 47.8, 47.8, 54.9, 0, 0, 23.5, -24.0],
+  'asymmetric-down-right': [-20.1, 12.6, -12.7, 42.5, 22.1, 41.8, 22.2, 61.7, 0, 0, 0, 0],
+  'attentive-left': [1.4, 6.2, 10.6, 23.8, 23.8, 58.1, 58.1, 56.8, 0, 0, 0, 0],
+  'joyful-wide': [-2.1, -15.9, -14.5, 34.2, 34.2, 85.3, 83.2, 59.4, 0, 0, 0, 0],
+  'eyes-closed': [-8.8, -8.7, -10.8, 56.1, 56.1, 15.5, 15.2, 69.3, 0, 0, 0, 0],
+  'joyful-down-right': [-15.3, 15.0, 12.8, 31.3, 31.3, 76.7, 76.7, 68.7, 0, 0, 0, 0],
+  'skeptical-left': [3.5, -7.1, 9.8, 24.3, 48.9, 59.3, 13.4, 62.2, 0, 0, 0, 0],
+  'far-right-glance': [0.3, 35.3, -10.9, 22.5, 22.5, 39.8, 39.8, 53.9, 0, 0, 0, 0],
+  'angry-left': [-14.8, -19.4, 5.6, 19.6, 19.6, 48.6, 48.6, 55.1, 0, 0, -27.6, 26.1],
+  'playful-right': [-4.4, 14.1, -16.1, 19.0, 19.0, 43.4, 43.4, 51.7, 0, 0, 26.3, -20.2],
+  'asymmetric-up-left': [6.6, 4.7, 12.8, 42.1, 22.2, 41.7, 22.1, 60.4, 0, 0, 0, 0],
+  'gentle-downward-gaze': [-6.1, -11.0, -14.0, 23.0, 23.0, 58.7, 58.7, 56.2, 0, 0, 0, 0],
+  'wide-down-left': [-17.1, 18.1, 13.9, 35.5, 35.5, 79.1, 79.1, 70.8, 0, 0, 0, 0],
+  'surprised-wide-left': [-5.4, -11.7, -13.5, 51.4, 50.5, 50.1, 49.4, 69, 0, 0, 0, 0],
+  'drowsy-closed': [10.3, 3.4, 7.6, 55.7, 55.7, 14.6, 14.6, 68.4, 0, 0, 0, 0],
+  'suspicious-right': [-17.8, 10, -10.9, 24.0, 53.6, 55.9, 13.3, 59.9, -9.8, -9.8, 0, 0],
+  'shy-downward': [7.1, 7.8, 3.9, 21.5, 23.2, 32, 33.5, 51.2, 40, 40, 0, 0],
+} as const satisfies Record<string, Expr>;
+type ExprKey = keyof typeof EXPRESSIONS;
+
+/** Looping timelines: each step eases to its expression over 500ms, then holds. */
+const ANIMATIONS = {
+  sleeping: { hold: 3600, steps: ['eyes-closed', 'drowsy-closed', 'sleepy-squint'] },
+  waking: { hold: 2300, steps: ['eyes-closed'] },
+  idle: { hold: 5200, steps: ['upward-side-glance', 'curious-left'] },
+  listening: { hold: 2300, steps: ['attentive-left', 'downward-gaze', 'gentle-downward-gaze'] },
+  thinking: { hold: 2300, steps: ['curious-left', 'angry-left', 'skeptical-left', 'playful-right', 'skeptical-right'] },
+  searching: { hold: 2300, steps: ['far-right-glance', 'asymmetric-down-right', 'surprised-left', 'wide-down-left', 'wide-downward-gaze', 'asymmetric-up-left'] },
+  working: { hold: 2300, steps: ['angry-right', 'angry-left', 'joyful-wide', 'attentive-left'] },
+  excited: { hold: 2300, steps: ['joyful-down-right', 'playful-right', 'surprised-wide-left', 'surprised-left', 'joyful-wide'] },
+  bored: { hold: 3600, steps: ['sleepy-squint', 'drowsy-closed', 'upward-side-glance'] },
+  suspicious: { hold: 2300, steps: ['skeptical-left', 'skeptical-right', 'suspicious-right'] },
+  angry: { hold: 2300, steps: ['angry-right', 'angry-left'] },
+  drowsy: { hold: 3600, steps: ['sleepy-squint', 'drowsy-closed', 'eyes-closed'] },
+  happy: { hold: 2300, steps: ['joyful-down-right', 'joyful-wide', 'playful-right', 'gentle-downward-gaze'] },
+  curious: { hold: 2300, steps: ['surprised-left', 'surprised-wide-left', 'upward-side-glance', 'far-right-glance'] },
+  confused: { hold: 2300, steps: ['skeptical-left', 'skeptical-right', 'curious-left'] },
+  surprised: { hold: 2300, steps: ['surprised-left', 'surprised-wide-left'] },
+  proud: { hold: 2300, steps: ['far-right-glance', 'curious-left', 'joyful-down-right'] },
+  shy: { hold: 2300, steps: ['upward-side-glance', 'shy-downward', 'eyes-closed'] },
+  sad: { hold: 3600, steps: ['sleepy-squint', 'eyes-closed', 'drowsy-closed'] },
+  laughing: { hold: 2300, steps: ['joyful-down-right', 'joyful-wide', 'playful-right'] },
+  scared: { hold: 2300, steps: ['surprised-left', 'surprised-wide-left'] },
+  playful: { hold: 2300, steps: ['joyful-down-right', 'playful-right', 'joyful-wide', 'curious-left'] },
+  celebrate: { hold: 2300, steps: ['joyful-down-right', 'curious-left', 'playful-right'] },
+} as const satisfies Record<string, { hold: number; steps: readonly ExprKey[] }>;
+export type PipAnimation = keyof typeof ANIMATIONS;
+export const PIP_ANIMATIONS = Object.keys(ANIMATIONS) as PipAnimation[];
+const TRANSITION_MS = 500;
+
+/** Which lab animation each agent state plays. */
+const STATE_ANIMATION: Record<PipState, PipAnimation> = {
+  idle: 'idle',
+  listening: 'listening',
+  thinking: 'thinking',
+  helping: 'working',
+  solved: 'happy',
+  escalating: 'searching',
+};
 
 const LABEL: Record<PipState, string> = {
   idle: 'Ready to help',
@@ -11,22 +114,6 @@ const LABEL: Record<PipState, string> = {
   helping: 'Helping',
   solved: 'Solved',
   escalating: 'Getting this reported',
-};
-
-type Mouth = 'soft' | 'small' | 'grin';
-
-/**
- * Face data per state (docs/05 "MVP-friendly option"): eye openness 0–1, gaze offset (-1..1, shifts the whole eye),
- * mouth shape. Pip always smiles; the state shows in the eyes, the gaze and the motion. No pupils, no video/Lottie
- * assets, no AGPL code — original Views + Animated, works on web and native.
- */
-const POSE: Record<PipState, { open: number; px: number; py: number; mouth: Mouth }> = {
-  idle: { open: 0.92, px: 0, py: 0, mouth: 'soft' },
-  listening: { open: 1, px: 0, py: 0, mouth: 'soft' },
-  thinking: { open: 0.8, px: 0, py: -0.7, mouth: 'small' },
-  helping: { open: 0.92, px: 0, py: 0.6, mouth: 'soft' },
-  solved: { open: 0.2, px: 0, py: 0, mouth: 'grin' },
-  escalating: { open: 0.72, px: 0, py: 0, mouth: 'small' },
 };
 
 /**
@@ -44,6 +131,136 @@ const ROAM_FACTOR: Record<PipState, number> = {
 
 const useNative = Platform.OS !== 'web';
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const DEG = Math.PI / 180;
+
+// ---------------------------------------------------------------------------------------------------------------
+// Projection: expression -> 2D frame (studio units, origin at the body centre, y down).
+
+type Vec3 = [number, number, number];
+type EyeFrame = { x: number; y: number; w: number; h: number; rot: number };
+type Frame = { eyes: [EyeFrame, EyeFrame]; rays: { x: number; y: number }[] };
+
+/** Yaw (around y), then pitch (around x), then roll (in the screen plane). */
+function rotate([x, y, z]: Vec3, pitch: number, yaw: number, roll: number): Vec3 {
+  const [sy, cy] = [Math.sin(yaw * DEG), Math.cos(yaw * DEG)];
+  const x1 = x * cy + z * sy;
+  const z1 = -x * sy + z * cy;
+  const [sp, cp] = [Math.sin(pitch * DEG), Math.cos(pitch * DEG)];
+  const y2 = y * cp - z1 * sp;
+  const z2 = y * sp + z1 * cp;
+  const [sr, cr] = [Math.sin(roll * DEG), Math.cos(roll * DEG)];
+  return [x1 * cr - y2 * sr, x1 * sr + y2 * cr, z2];
+}
+
+/** blink: 1 open → 0 shut (eyes squash to a 5-unit line, like the lab). glance: extra yaw in degrees. */
+function project(e: Expr, blink = 1, glance = 0): Frame {
+  const [hx, hy0, hz, wL, wR, hL, hR, spacing, pyL, pyR, aL, aR] = e;
+  const hy = hy0 + glance;
+  const { a, b, c } = BODY;
+  const eye = (side: -1 | 1, w: number, h: number, py: number, angle: number): EyeFrame => {
+    const ex = (side * spacing) / 2;
+    const ey = py;
+    const ez = c * Math.sqrt(Math.max(0, 1 - (ex / a) ** 2 - (ey / b) ** 2));
+    const [px, ppy] = rotate([ex, ey, ez], hx, hy, hz);
+    // Foreshorten with the surface normal, so eyes squash as they slide round the curve.
+    const n: Vec3 = [ex / a ** 2, ey / b ** 2, ez / c ** 2];
+    const len = Math.hypot(...n) || 1;
+    const [nx, ny] = rotate([n[0] / len, n[1] / len, n[2] / len], hx, hy, hz);
+    const open = 5 + (h - 5) * blink;
+    return { x: px, y: ppy, w: w * Math.sqrt(1 - nx * nx), h: open * Math.sqrt(1 - ny * ny), rot: angle + hz };
+  };
+  return {
+    eyes: [eye(-1, wL, hL, pyL, aL), eye(1, wR, hR, pyR, aR)],
+    rays: RAYS.map(([x, y]) => {
+      const [rx, ry] = rotate([x, y, RAY_Z], hx, hy, hz);
+      return { x: rx, y: ry };
+    }),
+  };
+}
+
+const lerpExpr = (from: Expr, to: Expr, t: number) => from.map((v, i) => v + (to[i] - v) * t) as unknown as Expr;
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+
+// ---------------------------------------------------------------------------------------------------------------
+// Rendering: one set of Animated values, written imperatively each frame (no React re-render per frame).
+
+type EyeValues = { x: Animated.Value; y: Animated.Value; w: Animated.Value; h: Animated.Value; rot: Animated.Value };
+type SpriteValues = { eyes: [EyeValues, EyeValues]; rays: { x: Animated.Value; y: Animated.Value }[] };
+
+function makeValues(f: Frame): SpriteValues {
+  const eye = (e: EyeFrame): EyeValues => ({
+    x: new Animated.Value(e.x),
+    y: new Animated.Value(e.y),
+    w: new Animated.Value(e.w),
+    h: new Animated.Value(e.h),
+    rot: new Animated.Value(e.rot),
+  });
+  return { eyes: [eye(f.eyes[0]), eye(f.eyes[1])], rays: f.rays.map((r) => ({ x: new Animated.Value(r.x), y: new Animated.Value(r.y) })) };
+}
+
+function applyFrame(v: SpriteValues, f: Frame) {
+  f.eyes.forEach((e, i) => {
+    const t = v.eyes[i];
+    t.x.setValue(e.x);
+    t.y.setValue(e.y);
+    t.w.setValue(e.w);
+    t.h.setValue(e.h);
+    t.rot.setValue(e.rot);
+  });
+  f.rays.forEach((r, i) => {
+    v.rays[i].x.setValue(r.x);
+    v.rays[i].y.setValue(r.y);
+  });
+}
+
+function Sprite({ size, values }: { size: number; values: SpriteValues }) {
+  const u = size / VIEW_UNITS;
+  const half = size / 2;
+  const bodyW = BODY.a * 2 * u;
+  const bodyH = BODY.b * 2 * u;
+  const px = (v: Animated.Value, offset: number) => Animated.add(Animated.multiply(v, u), offset);
+  return (
+    <View style={{ width: size, height: size }}>
+      {values.rays.map((r, i) => {
+        const d = RAYS[i][2] * u;
+        return (
+          <Animated.View
+            key={i}
+            style={[
+              styles.layer,
+              { width: d, height: d, borderRadius: d / 2, backgroundColor: COLORS.body, transform: [{ translateX: px(r.x, half - d / 2) }, { translateY: px(r.y, half - d / 2) }] },
+            ]}
+          />
+        );
+      })}
+      <View style={[styles.layer, styles.body, { width: bodyW, height: bodyH, borderRadius: bodyW, left: half - bodyW / 2, top: half - bodyH / 2 }]}>
+        {values.eyes.map((e, i) => {
+          const w = Animated.multiply(e.w, u);
+          const h = Animated.multiply(e.h, u);
+          return (
+            <Animated.View
+              key={i}
+              style={[
+                styles.layer,
+                styles.eye,
+                {
+                  width: w,
+                  height: h,
+                  borderRadius: size,
+                  transform: [
+                    { translateX: Animated.subtract(px(e.x, bodyW / 2), Animated.multiply(w, 0.5)) },
+                    { translateY: Animated.subtract(px(e.y, bodyH / 2), Animated.multiply(h, 0.5)) },
+                    { rotate: e.rot.interpolate({ inputRange: [-360, 360], outputRange: ['-360deg', '360deg'] }) },
+                  ],
+                },
+              ]}
+            />
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -59,128 +276,89 @@ function useReducedMotion() {
   return reduced;
 }
 
+const firstExpr = (anim: PipAnimation): Expr => EXPRESSIONS[ANIMATIONS[anim].steps[0]];
+
 /**
- * Pip: capsule body, oversized plain eyes, small smile, signal spark.
- * Ambient: float (3px), random blink, gaze darting while thinking, spark pulse, hop when solved.
- * Roaming (`roam` = max drift in px from home): continuous, inertial wander (see the roam effect) with a lean into
- * the direction of travel. Honours reduce-motion (static pose, no loops). State is never conveyed by the face
- * alone — the label always renders.
+ * Live Pip. Plays the lab animation for `state` (or an explicit `animation`), blinks every 2.5–6s, and roams inside
+ * `roam` (max drift in px from home) with a lean and a head turn toward the direction of travel. Reduced motion:
+ * first pose of the animation, no loops. The state label always renders, so state is never conveyed by the face alone.
  */
-export function Pip({ state = 'idle', size = 72, roam }: { state?: PipState; size?: number; roam?: { x: number; y: number } }) {
+export function Pip({
+  state = 'idle',
+  size = 72,
+  roam,
+  animation,
+}: {
+  state?: PipState;
+  size?: number;
+  roam?: { x: number; y: number };
+  /** Override the state's default animation with any lab animation (see PIP_ANIMATIONS). */
+  animation?: PipAnimation;
+}) {
   const reduced = useReducedMotion();
-  const pose = POSE[state];
-  const roamAmountRef = useRef(ROAM_FACTOR[state]);
-  roamAmountRef.current = ROAM_FACTOR[state];
+  const anim = animation ?? STATE_ANIMATION[state];
+  const values = useRef<SpriteValues | null>(null);
+  if (!values.current) values.current = makeValues(project(firstExpr(anim)));
+  const sprite = values.current;
 
   const rx = useRef(new Animated.Value(0)).current;
   const ry = useRef(new Animated.Value(0)).current;
   const tilt = useRef(new Animated.Value(0)).current;
-  const look = useRef(new Animated.Value(0)).current;
-  const float = useRef(new Animated.Value(0)).current;
-  const hop = useRef(new Animated.Value(0)).current;
-  const blink = useRef(new Animated.Value(1)).current;
-  const open = useRef(new Animated.Value(pose.open)).current;
-  const px = useRef(new Animated.Value(pose.px)).current;
-  const py = useRef(new Animated.Value(pose.py)).current;
-  const dart = useRef(new Animated.Value(0)).current;
-  const spark = useRef(new Animated.Value(1)).current;
   const phases = useRef(Array.from({ length: 4 }, () => Math.random() * Math.PI * 2)).current;
 
-  const eyeW = size * 0.24;
-  const eyeH = size * 0.38;
-  const gaze = size * 0.05; // px the eyes shift for a full gaze offset
+  // Shared between the expression loop and the roam loop.
+  const live = useRef({ shown: firstExpr(anim) as Expr, glance: 0, roamAmount: ROAM_FACTOR[state] });
+  live.current.roamAmount = ROAM_FACTOR[state];
 
-  // Expression transition (also the reduced-motion static pose: duration 0).
+  // Expression timeline + blink.
   useEffect(() => {
-    const d = reduced ? 0 : 260;
-    const t = (v: Animated.Value, to: number) =>
-      Animated.timing(v, { toValue: to, duration: d, easing: Easing.bezier(0.2, 0.8, 0.2, 1), useNativeDriver: useNative });
-    Animated.parallel([t(open, pose.open), t(px, pose.px), t(py, pose.py)]).start();
-  }, [state, reduced, pose.open, pose.px, pose.py, open, px, py]);
-
-  // Float loop.
-  useEffect(() => {
+    const { steps, hold } = ANIMATIONS[anim];
     if (reduced) {
-      float.setValue(0);
+      live.current.shown = EXPRESSIONS[steps[0]];
+      applyFrame(sprite, project(live.current.shown));
       return;
     }
-    const speed = state === 'escalating' ? 900 : 1700;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(float, { toValue: 1, duration: speed, easing: Easing.inOut(Easing.sin), useNativeDriver: useNative }),
-        Animated.timing(float, { toValue: 0, duration: speed, easing: Easing.inOut(Easing.sin), useNativeDriver: useNative }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [float, reduced, state]);
-
-  // Random blink every 2.5–5s; ~1 in 5 is a quick double-blink. Skipped when eyes are already closed/happy.
-  useEffect(() => {
-    if (reduced || state === 'solved') return;
-    let timer: ReturnType<typeof setTimeout>;
-    const once = () =>
-      Animated.sequence([
-        Animated.timing(blink, { toValue: 0.08, duration: 80, useNativeDriver: useNative }),
-        Animated.timing(blink, { toValue: 1, duration: 130, useNativeDriver: useNative }),
-      ]);
-    const schedule = () => {
-      timer = setTimeout(() => {
-        (Math.random() < 0.2 ? Animated.sequence([once(), Animated.delay(120), once()]) : once()).start(schedule);
-      }, 2500 + Math.random() * 2500);
+    let raf = 0;
+    let index = 0;
+    let from = live.current.shown;
+    let to: Expr = EXPRESSIONS[steps[0]];
+    let stepStart = Date.now();
+    let nextBlink = stepStart + 1200 + Math.random() * 2500;
+    const BLINK_MS = 180;
+    const tick = () => {
+      const now = Date.now();
+      const elapsed = now - stepStart;
+      const shown = elapsed < TRANSITION_MS ? lerpExpr(from, to, easeInOut(elapsed / TRANSITION_MS)) : to;
+      live.current.shown = shown;
+      if (steps.length > 1 && elapsed >= TRANSITION_MS + hold) {
+        index = (index + 1) % steps.length;
+        from = shown;
+        to = EXPRESSIONS[steps[index]];
+        stepStart = now;
+      }
+      let blink = 1;
+      if (now >= nextBlink) {
+        const p = (now - nextBlink) / BLINK_MS;
+        if (p >= 1) nextBlink = now + 2500 + Math.random() * 3500;
+        else blink = 1 - Math.sin(Math.PI * p);
+      }
+      applyFrame(sprite, project(shown, blink, live.current.glance));
+      raf = requestAnimationFrame(tick);
     };
-    schedule();
-    return () => clearTimeout(timer);
-  }, [blink, reduced, state]);
-
-  // Thinking: eyes dart side to side; spark pulses while thinking/listening.
-  useEffect(() => {
-    dart.setValue(0);
-    if (reduced || state !== 'thinking') return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(dart, { toValue: 0.8, duration: 420, easing: Easing.inOut(Easing.ease), useNativeDriver: useNative }),
-        Animated.delay(260),
-        Animated.timing(dart, { toValue: -0.8, duration: 560, easing: Easing.inOut(Easing.ease), useNativeDriver: useNative }),
-        Animated.delay(260),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [dart, reduced, state]);
-
-  useEffect(() => {
-    spark.setValue(1);
-    if (reduced || (state !== 'thinking' && state !== 'listening')) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(spark, { toValue: 1.7, duration: 500, useNativeDriver: useNative }),
-        Animated.timing(spark, { toValue: 1, duration: 500, useNativeDriver: useNative }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [spark, reduced, state]);
-
-  // Solved: one-shot celebratory hop.
-  useEffect(() => {
-    if (reduced || state !== 'solved') return;
-    Animated.sequence([
-      Animated.timing(hop, { toValue: -size * 0.16, duration: 160, easing: Easing.out(Easing.quad), useNativeDriver: useNative }),
-      Animated.spring(hop, { toValue: 0, friction: 4, tension: 160, useNativeDriver: useNative }),
-    ]).start();
-  }, [hop, reduced, state, size]);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [anim, reduced, sprite]);
 
   /**
-   * Roam. A drifting target is built from two slow sine waves per axis with unrelated periods, so the path never
-   * repeats or turns sharply; Pip chases the target with exponential smoothing (inertia), so it accelerates and
-   * eases like something with weight. It leans into the direction of travel, and its eyes glance ahead. The roam
-   * amount itself is smoothed, so a state change eases Pip in or back to its spot instead of snapping.
+   * Roam. A drifting target from two slow sine waves per axis with unrelated periods (never repeats or turns
+   * sharply); Pip chases it with exponential smoothing (inertia), leans into the direction of travel and turns its
+   * head toward it. The roam amount is smoothed, so a state change eases Pip in or back to its spot.
    */
   useEffect(() => {
     if (!roam || reduced) {
+      live.current.glance = 0;
       Animated.parallel(
-        [rx, ry, tilt, look].map((v) => Animated.timing(v, { toValue: 0, duration: 600, easing: Easing.out(Easing.quad), useNativeDriver: useNative })),
+        [rx, ry, tilt].map((v) => Animated.timing(v, { toValue: 0, duration: 600, easing: Easing.out(Easing.quad), useNativeDriver: useNative })),
       ).start();
       return;
     }
@@ -191,14 +369,13 @@ export function Pip({ state = 'idle', size = 72, roam }: { state?: PipState; siz
     let x = 0;
     let y = 0;
     let lean = 0;
-    let glance = 0;
     const tick = () => {
       const now = Date.now();
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       if (dt > 0) {
         t += dt;
-        amount += (roamAmountRef.current - amount) * (1 - Math.exp(-dt * 2));
+        amount += (live.current.roamAmount - amount) * (1 - Math.exp(-dt * 2));
         const tx = amount * roam.x * (0.62 * Math.sin(0.33 * t + phases[0]) + 0.38 * Math.sin(0.79 * t + phases[1]));
         const ty = amount * roam.y * (0.62 * Math.sin(0.47 * t + phases[2]) + 0.38 * Math.sin(0.97 * t + phases[3]));
         const k = 1 - Math.exp(-dt * 1.8);
@@ -208,44 +385,16 @@ export function Pip({ state = 'idle', size = 72, roam }: { state?: PipState; siz
         x = nx;
         y = ny;
         lean += (clamp(vx / 45, -1, 1) - lean) * (1 - Math.exp(-dt * 3));
-        glance += (clamp(vx / 30, -1, 1) * 0.7 - glance) * (1 - Math.exp(-dt * 4));
+        live.current.glance += (clamp(vx / 30, -1, 1) * 12 - live.current.glance) * (1 - Math.exp(-dt * 4));
         rx.setValue(x);
         ry.setValue(y);
         tilt.setValue(lean);
-        look.setValue(glance);
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [roam, reduced, rx, ry, tilt, look, phases]);
-
-  const eyeScale = Animated.multiply(open, blink);
-  const eyesX = Animated.multiply(Animated.add(Animated.add(px, dart), look), gaze);
-  const eyesY = Animated.multiply(py, gaze);
-  const bodyY = Animated.add(float.interpolate({ inputRange: [0, 1], outputRange: [0, -3] }), hop);
-
-  const eye = (
-    <Animated.View style={[styles.eye, { width: eyeW, height: eyeH, borderRadius: eyeW / 2, transform: [{ scaleY: eyeScale }] }]} />
-  );
-
-  const stroke = Math.max(2, size * 0.04);
-  const mouthW = size * (pose.mouth === 'grin' ? 0.34 : pose.mouth === 'small' ? 0.16 : 0.24);
-  const mouth = (
-    <View
-      style={{
-        width: mouthW,
-        height: mouthW / 2,
-        borderBottomLeftRadius: mouthW,
-        borderBottomRightRadius: mouthW,
-        borderBottomWidth: stroke,
-        borderLeftWidth: stroke,
-        borderRightWidth: stroke,
-        borderColor: colors.surface,
-        opacity: 0.92,
-      }}
-    />
-  );
+  }, [roam, reduced, rx, ry, tilt, phases]);
 
   return (
     <Animated.View
@@ -255,25 +404,33 @@ export function Pip({ state = 'idle', size = 72, roam }: { state?: PipState; siz
       ]}
       accessibilityRole="image"
       accessibilityLabel={`Pip, ${LABEL[state]}`}>
-      <Animated.View
-        style={[styles.body, { width: size, height: size * 1.1, borderRadius: size / 2, transform: [{ translateY: bodyY }] }]}>
-        <Animated.View style={[styles.eyes, { gap: size * 0.12, transform: [{ translateX: eyesX }, { translateY: eyesY }] }]}>
-          {eye}
-          {eye}
-        </Animated.View>
-        <View style={{ marginTop: size * 0.1, height: size * 0.18, justifyContent: 'center' }}>{mouth}</View>
-        <Animated.View style={[styles.spark, { top: size * 0.12, right: size * 0.16, transform: [{ scale: spark }] }]} />
-      </Animated.View>
-      <Text style={styles.label}>{LABEL[state]}</Text>
+      <Sprite size={size} values={sprite} />
+      <Text style={[styles.label, { maxWidth: Math.max(76, size * 1.6) }]}>{LABEL[state]}</Text>
     </Animated.View>
+  );
+}
+
+/**
+ * Static Pip face for chat avatars (no loops, no label): the first pose of the state's animation. Decorative: the
+ * message beside it carries the meaning, and the live <Pip> elsewhere on screen announces the current state.
+ */
+export function PipAvatar({ size = 36, state = 'idle' }: { size?: number; state?: PipState }) {
+  const values = useRef<SpriteValues | null>(null);
+  if (!values.current) values.current = makeValues(project(firstExpr(STATE_ANIMATION[state])));
+  useEffect(() => {
+    if (values.current) applyFrame(values.current, project(firstExpr(STATE_ANIMATION[state])));
+  }, [state]);
+  return (
+    <View accessible={false} importantForAccessibility="no-hide-descendants">
+      <Sprite size={size} values={values.current} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center', gap: 6 },
-  body: { backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
-  eyes: { flexDirection: 'row', alignItems: 'center' },
-  eye: { backgroundColor: colors.surface },
-  spark: { position: 'absolute', width: 8, height: 8, borderRadius: 4, backgroundColor: colors.signal },
-  label: { color: colors.muted, fontSize: 12, lineHeight: 18 },
+  layer: { position: 'absolute', left: 0, top: 0 },
+  body: { backgroundColor: COLORS.body, overflow: 'hidden' },
+  eye: { backgroundColor: COLORS.eyes },
+  label: { color: palette.textMuted, fontSize: 11, lineHeight: 14, fontWeight: '500', textAlign: 'center' },
 });

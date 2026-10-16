@@ -68,9 +68,24 @@ export async function POST(request: Request) {
       if (events.some((e) => e.type === 'escalation')) return;
       const options = escalationOptions(sp, { summary: message, incidentKey, urgent });
       if (options.length) events.push({ type: 'escalation', reason, urgent, options });
+      pushCallApproval(incidentKey, urgent);
+    };
+    // Twilio call: only offered for an existing, unresolved ticket, never for hazards, and only when the operator enabled
+    // calls and a pre-approved number exists. The destination is never chosen here or by the model.
+    const pushCallApproval = (incidentKey: string | undefined, urgent: boolean) => {
+      if (!incidentKey || urgent || events.some((e) => e.type === 'approval' && e.kind === 'MAINTENANCE_CALL')) return;
+      if (!flags.outboundCalls || !configured.twilio || !configured.approvedCallNumber) return;
+      events.push({
+        type: 'approval',
+        actionId: issueActionId('MAINTENANCE_CALL', locationId, incidentKey),
+        kind: 'MAINTENANCE_CALL',
+        label: 'Have SIGNAL place an automated call to maintenance',
+        incidentKey,
+        summary: message,
+      });
     };
     const pushPortalApproval = (incident: Incident, label?: string) => {
-      if (events.some((e) => e.type === 'approval')) return;
+      if (events.some((e) => e.type === 'approval' && e.kind !== 'MAINTENANCE_CALL')) return;
       if (sp.escalation.portal !== 'signal_demo' || !configured.anchor || incident.status === 'RESOLVED') return;
       events.push({
         type: 'approval',
@@ -82,7 +97,7 @@ export async function POST(request: Request) {
       });
     };
     const pushCreateApproval = (assetId: string | null) => {
-      if (events.some((e) => e.type === 'approval')) return;
+      if (events.some((e) => e.type === 'approval' && e.kind !== 'MAINTENANCE_CALL')) return;
       events.push({ type: 'approval', actionId: issueActionId('CREATE_INCIDENT', locationId, 'new'), kind: 'CREATE_INCIDENT', label: 'Report this to maintenance', summary: message.slice(0, 300), assetId });
     };
 

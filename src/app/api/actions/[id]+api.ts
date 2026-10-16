@@ -2,6 +2,7 @@ import { denied, visitorAccess } from '@/lib/access';
 import { endSession, workflowStatus } from '@/lib/anchor';
 import { getAttempt, getIncident, toView, updateAttempt, type ActionAttempt } from '@/lib/core';
 import { flushTraces, withSpan } from '@/lib/tracing';
+import { describeCall, fetchCall } from '@/lib/twilio';
 
 const TIMEOUT_MS = 5 * 60 * 1000;
 const terminal = (a: ActionAttempt) => a.state === 'VERIFIED' || a.state === 'FAILED' || a.state === 'PENDING_REVIEW';
@@ -15,6 +16,17 @@ export async function GET(request: Request, { id }: { id: string }) {
   if (!attempt) return Response.json({ error: 'not_found' }, { status: 404 });
   const access = await visitorAccess(request, attempt.locationId);
   if (!access.ok) return denied(access);
+
+  // Calls: no portal read-back. Ask Twilio for the real status (covers localhost, where no webhook can reach us).
+  if (attempt.kind === 'MAINTENANCE_CALL' && !terminal(attempt) && attempt.callSid) {
+    try {
+      const { state, evidence } = describeCall(await fetchCall(attempt.callSid));
+      attempt = (await updateAttempt(attempt.key, { state, evidence })) ?? attempt;
+    } catch (e) {
+      attempt = (await updateAttempt(attempt.key, { evidence: `Could not read call status from Twilio: ${e instanceof Error ? e.message : String(e)}` })) ?? attempt;
+    }
+    return Response.json({ attempt, incident: null });
+  }
 
   if (!terminal(attempt)) {
     attempt = await withSpan('verify.portal_readback', 'TOOL', { 'tool.name': 'portal_readback', 'signal.attempt': id }, async (span) => {

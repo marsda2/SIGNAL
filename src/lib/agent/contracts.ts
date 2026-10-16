@@ -93,7 +93,7 @@ export type ChatEvent =
   | { type: 'notice'; code: 'llm_not_configured' | 'memory_unavailable' | 'core_unavailable' | 'core_local' | 'policy_blocked'; message: string }
   | { type: 'incident'; incident: IncidentView; relation: 'linked' | 'created' }
   /** Server-authorized offer. The UI shows a button; nothing happens until the visitor taps it. */
-  | { type: 'approval'; actionId: string; kind: 'CREATE_INCIDENT' | 'UPDATE_PORTAL'; label: string; incidentKey?: string; summary?: string; assetId?: string | null }
+  | { type: 'approval'; actionId: string; kind: 'CREATE_INCIDENT' | 'UPDATE_PORTAL' | 'MAINTENANCE_CALL'; label: string; incidentKey?: string; summary?: string; assetId?: string | null }
   | { type: 'cue'; cue: CueName; caption: string }
   /** Deterministic match against this space's past reports (Core), independent of the model. */
   | { type: 'seen_before'; incident: IncidentView; agoText: string; days: number; strong: boolean; assetName: string }

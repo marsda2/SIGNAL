@@ -24,8 +24,9 @@ export type ComposerProps = {
 };
 
 /**
- * Ivory capsule with an orange mic. Text input is always available as the alternative to voice.
- * Start capture only from the mic tap (explicit user gesture) and always show the recording state + stop control.
+ * Ivory capsule with one orange circle: the mic when voice is wired, otherwise the send button.
+ * Text input is always available as the alternative to voice. Start capture only from the mic tap
+ * (explicit user gesture) and always show the recording state + stop control.
  * Do not animate an idle waveform as though audio were being captured.
  */
 export function Composer({
@@ -46,7 +47,7 @@ export function Composer({
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.capsule}>
+      <View style={[styles.capsule, !hasVoice && styles.capsuleText]}>
         {hasVoice ? (
           <Pressable
             accessibilityRole="button"
@@ -54,8 +55,8 @@ export function Composer({
             accessibilityState={{ busy }}
             disabled={busy || state === 'blocked'}
             onPress={recording ? onStopRecording : onStartRecording}
-            style={[styles.mic, (busy || state === 'blocked') && styles.micDisabled]}>
-            <Glyph name={recording ? 'check' : 'mic'} size={18} />
+            style={({ pressed }) => [styles.circle, styles.mic, pressed && styles.circlePressed, (busy || state === 'blocked') && styles.micDisabled]}>
+            <Glyph name={recording ? 'check' : 'mic'} size={22} color="onAccent" />
           </Pressable>
         ) : null}
 
@@ -79,11 +80,23 @@ export function Composer({
           />
         )}
 
-        {canSend ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Send" onPress={onSend} style={styles.send}>
-            <Glyph name="arrow-right" size={20} color="accentInk" />
+        {hasVoice ? (
+          canSend ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Send" onPress={onSend} style={styles.ghost}>
+              <Glyph name="arrow-right" size={22} color="accentInk" />
+            </Pressable>
+          ) : null
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Send"
+            accessibilityState={{ disabled: !canSend }}
+            disabled={!canSend}
+            onPress={onSend}
+            style={({ pressed }) => [styles.circle, styles.send, !canSend && styles.sendIdle, pressed && styles.circlePressed]}>
+            <Glyph name="arrow-up" size={22} color={canSend ? 'onAccent' : 'textDisabled'} />
           </Pressable>
-        ) : null}
+        )}
       </View>
       {state === 'blocked' ? (
         <SignalText variant="meta" style={styles.hint} accessibilityLiveRegion="polite">
@@ -98,37 +111,41 @@ const styles = StyleSheet.create({
   wrap: { gap: 8 },
   capsule: {
     minHeight: layout.composerHeight,
-    padding: 7,
+    padding: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceGlassStrong,
-    boxShadow: shadows.soft,
+    boxShadow: shadows.floating,
   },
-  mic: {
+  capsuleText: { paddingLeft: 8 },
+  circle: {
     width: layout.micSize,
     height: layout.micSize,
     borderRadius: layout.micSize / 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: palette.accent,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
+    boxShadow: shadows.primary,
   },
+  mic: { width: layout.micSize + 4, height: layout.micSize + 4, borderRadius: (layout.micSize + 4) / 2 },
+  circlePressed: { backgroundColor: palette.accentPressed, boxShadow: shadows.primaryPressed },
   micDisabled: { opacity: 0.5 },
+  send: {},
+  sendIdle: { backgroundColor: palette.surfaceSunken, boxShadow: '0 0 0 rgba(0,0,0,0)' },
   input: {
     flex: 1,
     minWidth: 0,
     paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     color: palette.text,
     ...type.body,
   },
-  status: { flex: 1, paddingHorizontal: 4 },
-  send: {
+  status: { flex: 1, paddingHorizontal: 6 },
+  ghost: {
     width: layout.minTouch,
     height: layout.minTouch,
     borderRadius: layout.minTouch / 2,

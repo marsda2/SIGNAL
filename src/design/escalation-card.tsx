@@ -1,7 +1,8 @@
-import { StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { GlassCard } from './glass-card';
 import { Glyph } from './glyph';
+import { IconWell } from './icon-well';
 import { SignalButton } from './signal-button';
 import { SignalText } from './signal-text';
 import { copy, palette } from './tokens';
@@ -40,14 +41,12 @@ export function EscalationCard({
   return (
     <GlassCard accessibilityLabel={title} style={styles.card}>
       <View style={styles.head}>
-        <View style={styles.icon}>
-          <Glyph name="wrench" size={22} color="accentInk" />
-        </View>
+        <IconWell name="wrench" tone="accent" size={48} />
         <View style={styles.text}>
           <SignalText variant="section" accessibilityRole="header">
             {title}
           </SignalText>
-          <SignalText variant="body" color="textSecondary">
+          <SignalText variant="label" color="textSecondary" style={styles.body}>
             {body}
           </SignalText>
           {consequence ? <SignalText variant="meta">{consequence}</SignalText> : null}
@@ -55,16 +54,15 @@ export function EscalationCard({
       </View>
 
       {requesting ? (
-        <SignalText variant="label" accessibilityRole="text" accessibilityLiveRegion="polite">
-          {requestStatus ?? 'Calling maintenance…'}
-        </SignalText>
+        <View style={styles.requesting}>
+          <ActivityIndicator size="small" color={palette.accent} />
+          <SignalText variant="label" accessibilityRole="text" accessibilityLiveRegion="polite">
+            {requestStatus ?? 'Calling maintenance…'}
+          </SignalText>
+        </View>
       ) : (
         <View style={styles.actions}>
-          <SignalButton
-            label={approveLabel}
-            trailing={<Glyph name="arrow-right" />}
-            onPress={onApprove}
-          />
+          <SignalButton label={approveLabel} trailing={<Glyph name="arrow-right" color="onAccent" />} onPress={onApprove} />
           <SignalButton variant="quiet" label={declineLabel} onPress={onDecline} />
         </View>
       )}
@@ -73,16 +71,18 @@ export function EscalationCard({
 }
 
 const styles = StyleSheet.create({
-  card: { gap: 12 },
-  head: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
-  icon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  card: { gap: 14 },
+  head: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
+  text: { flex: 1, minWidth: 0, gap: 3 },
+  body: { fontWeight: '400', lineHeight: 20 },
+  requesting: {
+    minHeight: 52,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 10,
+    borderRadius: 999,
     backgroundColor: palette.accentSoft,
   },
-  text: { flex: 1, minWidth: 0, gap: 4 },
-  actions: { gap: 4 },
+  actions: { gap: 2 },
 });

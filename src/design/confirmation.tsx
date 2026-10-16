@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { GlassCard } from './glass-card';
 import { SignalText } from './signal-text';
 import { StatusMark, type StatusKind } from './status';
+import { palette } from './tokens';
 
 export type TimelineStep = {
   kind: StatusKind;
@@ -23,7 +24,9 @@ export function Timeline({ steps }: { steps: TimelineStep[] }) {
             {i < steps.length - 1 ? <View style={styles.line} /> : null}
           </View>
           <View style={styles.stepText}>
-            <SignalText variant="label">{step.label}</SignalText>
+            <SignalText variant="label" style={styles.stepLabel}>
+              {step.label}
+            </SignalText>
             {step.time ? <SignalText variant="meta">{step.time}</SignalText> : null}
           </View>
         </View>
@@ -41,7 +44,7 @@ export type ConfirmationCardProps = {
   children?: ReactNode;
 };
 
-/** Glass card for the confirmed-escalation screen. Pair the status chip above it, ticket strip below. */
+/** Card for the confirmed-escalation screen. Pair the status chip above it, ticket strip below. */
 export function ConfirmationCard({ assignee, eta, steps, children }: ConfirmationCardProps) {
   return (
     <GlassCard>
@@ -69,11 +72,12 @@ export function TicketStrip({ reference, action }: { reference: string; action: 
 
 const styles = StyleSheet.create({
   eta: { marginTop: 4 },
-  timeline: { marginTop: 20 },
+  timeline: { marginTop: 18 },
   step: { flexDirection: 'row', gap: 12 },
   rail: { alignItems: 'center', width: 24 },
-  line: { flex: 1, width: 1, marginVertical: 4, backgroundColor: 'rgba(45,113,52,0.3)', minHeight: 12 },
-  stepText: { flex: 1, minWidth: 0, gap: 2, paddingBottom: 20 },
+  line: { flex: 1, width: 2, borderRadius: 1, marginVertical: 4, backgroundColor: palette.successLine, minHeight: 12 },
+  stepText: { flex: 1, minWidth: 0, gap: 2, paddingBottom: 18 },
+  stepLabel: { fontWeight: '600' },
   strip: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -83,5 +87,5 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
-  ref: { flexShrink: 1 },
+  ref: { flexShrink: 1, fontWeight: '600' },
 });

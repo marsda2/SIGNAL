@@ -1,30 +1,36 @@
 import { ActivityIndicator, Pressable, StyleSheet, type PressableProps, type ViewStyle } from 'react-native';
 
 import { SignalText } from './signal-text';
-import { layout, motion, palette, radius, shadows, gradients } from './tokens';
+import { layout, motion, palette, radius, shadows } from './tokens';
 
 export type SignalButtonProps = Omit<PressableProps, 'children' | 'style'> & {
   /** primary = one dominant orange action per task section; outline = secondary; quiet = tertiary text action. */
   variant?: 'primary' | 'outline' | 'quiet';
+  /** `sm` = compact pill for inline actions inside cards and chat. */
+  size?: 'md' | 'sm';
   /** Action verb first: "Approve call", "Send report", "Try again". */
   label: string;
   /** Label shown while `loading`, e.g. "Requesting call…". A spinner alone is never enough. */
   loadingLabel?: string;
   loading?: boolean;
-  /** Trailing glyph/icon node. Primary and outline show an arrow in the reference. */
+  /** Leading glyph/icon node, e.g. a check on "That fixed it". */
+  leading?: React.ReactNode;
+  /** Trailing glyph/icon node. Primary shows an arrow in the reference. */
   trailing?: React.ReactNode;
   style?: ViewStyle;
 };
 
 /**
- * Primary label is charcoal on orange (white-on-bright-orange fails contrast at this size).
+ * Concept-board button: white label on signal orange with a soft orange glow; outline = orange hairline + orange ink.
  * Loading keeps the same width, swaps the label, blocks repeat taps and sets busy state.
  */
 export function SignalButton({
   variant = 'primary',
+  size = 'md',
   label,
   loadingLabel,
   loading,
+  leading,
   trailing,
   disabled,
   style,
@@ -40,24 +46,22 @@ export function SignalButton({
       accessibilityState={{ disabled: !!inactive, busy: !!loading }}
       disabled={inactive}
       onPress={onPress}
-      hitSlop={variant === 'quiet' ? 8 : 0}
+      hitSlop={variant === 'quiet' || size === 'sm' ? 8 : 0}
       {...rest}
       style={({ pressed }) => [
         styles.base,
         variants[variant],
+        size === 'sm' && styles.small,
         pressed && pressedStyles[variant],
         disabled && styles.disabled,
         style,
       ]}>
-      {loading ? <ActivityIndicator size="small" color={palette.text} /> : null}
+      {loading ? <ActivityIndicator size="small" color={variant === 'primary' ? palette.onAccent : palette.text} /> : null}
+      {!loading && leading ? leading : null}
       <SignalText
-        variant={variant === 'primary' ? 'button' : 'label'}
-        color={variant === 'primary' ? 'text' : variant === 'outline' ? 'accentInk' : 'textSecondary'}
-        style={[
-          variant === 'primary' && styles.primaryLabel,
-          variant === 'outline' && styles.semibold,
-          variant === 'quiet' && styles.regular,
-        ]}>
+        variant={variant === 'primary' && size === 'md' ? 'button' : 'label'}
+        color={variant === 'primary' ? 'onAccent' : variant === 'outline' ? 'accentInk' : 'textSecondary'}
+        style={[styles.label, variant === 'quiet' ? styles.regular : styles.semibold]}>
         {loading && loadingLabel ? loadingLabel : label}
       </SignalText>
       {!loading && trailing ? trailing : null}
@@ -69,16 +73,18 @@ const styles = StyleSheet.create({
   base: {
     minHeight: layout.minTouch,
     paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    gap: 10,
     borderRadius: radius.pill,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: 'transparent',
   },
-  primaryLabel: { flex: 1, textAlign: 'center' },
+  small: { minHeight: 38, alignSelf: 'flex-start', paddingVertical: 7, paddingHorizontal: 14, gap: 6 },
+  /** Long labels ("Add my report to T-102 and escalate") wrap centered next to the arrow. */
+  label: { flexShrink: 1, textAlign: 'center' },
   semibold: { fontWeight: '600' },
   regular: { fontWeight: '400' },
   disabled: { opacity: 0.5 },
@@ -89,16 +95,15 @@ const variants = {
     minHeight: layout.primaryButtonHeight,
     alignSelf: 'stretch',
     paddingVertical: 14,
-    paddingHorizontal: 20,
-    justifyContent: 'space-between',
+    paddingHorizontal: 22,
     backgroundColor: palette.accent,
-    backgroundImage: gradients.primaryAction,
+    borderColor: palette.accent,
     boxShadow: shadows.primary,
   },
   outline: {
     alignSelf: 'stretch',
-    backgroundColor: 'rgba(255,250,243,0.72)',
-    borderColor: palette.accentInk,
+    backgroundColor: palette.surfaceGlassStrong,
+    borderColor: palette.accent,
   },
   quiet: {
     alignSelf: 'center',
@@ -107,7 +112,7 @@ const variants = {
 } as const satisfies Record<string, ViewStyle>;
 
 const pressedStyles = {
-  primary: { backgroundImage: 'none', backgroundColor: palette.accentPressed, transform: [{ scale: motion.pressScale }] },
+  primary: { backgroundColor: palette.accentPressed, borderColor: palette.accentPressed, boxShadow: shadows.primaryPressed, transform: [{ scale: motion.pressScale }] },
   outline: { backgroundColor: palette.accentSoft },
   quiet: { opacity: 0.6 },
 } as const satisfies Record<string, ViewStyle>;

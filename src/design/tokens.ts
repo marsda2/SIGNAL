@@ -1,52 +1,72 @@
 /**
- * SIGNAL design tokens — source of truth is docs/UI-STYLE-GUIDE.md (derived from SIGNAL-Brand-UI-Kit v1.0).
- * Light-only by design: the brand is warm ivory + charcoal + orange. Do not add a dark palette without a design pass.
- * Values are reconstruction targets from the reference image; the kit's written tokens are authoritative.
+ * SIGNAL design tokens — source of truth is docs/UI-STYLE-GUIDE.md (Brand & UI concept board, 2026-10-16).
+ * Light-only by design: warm ivory + charcoal + signal orange, green only for verified success.
+ * Do not add a dark palette without a design pass.
  */
 
 export const palette = {
-  canvas: '#E7E0D8',
-  canvasLight: '#F5EEE6',
-  canvasShade: '#CFC6BC',
-  surfaceSolid: '#F4EDE5',
-  surfaceGlass: 'rgba(255,250,243,0.66)',
-  surfaceGlassStrong: 'rgba(255,250,243,0.88)',
-  surfaceUser: 'rgba(92,83,75,0.12)',
+  /** Warm ivory field ("Warm ivory" swatch). Never pure white or cool-toned. */
+  canvas: '#F4EFE9',
+  canvasLight: '#F9F6F1',
+  canvasShade: '#E6DFD7',
+  /** Cards, tiles, bubbles: near-white with a warm cast. */
+  surfaceSolid: '#FFFCF8',
+  surfaceGlass: 'rgba(255,253,250,0.84)',
+  surfaceGlassStrong: 'rgba(255,253,250,0.96)',
+  /** "Frosted surfaces": number badges, disabled controls, neutral wells. */
+  surfaceSunken: '#EFE9E2',
+  /** Visitor chat bubble: soft peach. */
+  surfaceUser: '#FCDDCB',
 
-  text: '#25221F',
-  textSecondary: '#625B54',
-  textMuted: '#70675E',
+  text: '#26221F',
+  textSecondary: '#5E5852',
+  textMuted: '#6E6760',
+  textDisabled: '#A69E96',
 
-  accent: '#FF641F',
-  accentLight: '#FF7938',
-  accentPressed: '#F55C15',
-  accentInk: '#A83A0B',
-  accentSoft: '#FFE4D3',
+  /** Signal orange: action surfaces and small attention accents only. */
+  accent: '#F66216',
+  accentLight: '#FF7E3B',
+  accentPressed: '#E25510',
+  /** Orange text, outline labels, focus (≥4.5:1 on ivory and on accentSoft). */
+  accentInk: '#B4420C',
+  /** Selected tiles, icon wells, pressed states. */
+  accentSoft: '#FFE7D8',
+  accentLine: '#F9C7A8',
+  /** Label/icon on an orange fill (concept board). ~3.2:1 — set to `text` for 5:1 charcoal labels. */
+  onAccent: '#FFFFFF',
 
-  success: '#42A34B',
-  successInk: '#2D7134',
-  successSoft: '#E0EFDC',
+  success: '#3A9444',
+  successInk: '#2A7031',
+  successSoft: '#E7F3E3',
+  successLine: '#C9E2C3',
   errorInk: '#A33228',
+  errorSoft: '#FBE6E1',
 
-  focus: '#A83A0B',
+  focus: '#B4420C',
 
-  border: 'rgba(255,255,255,0.66)',
+  border: 'rgba(255,255,255,0.92)',
+  hairline: 'rgba(70,52,36,0.08)',
   divider: 'rgba(64,49,36,0.09)',
 } as const;
 
 export type PaletteColor = keyof typeof palette;
 
-/** Orange = action/attention, green = verified success, red = failure. Never rely on color alone for state. */
+/**
+ * Orange = action/attention, green = verified success, red = failure. Never rely on color alone for state.
+ * Not applied on server-rendered routes: RN-web drops `backgroundImage` during SSR (hydration mismatch).
+ */
 export const gradients = {
-  screen: 'linear-gradient(145deg, #DED5CB 0%, #F2E9DE 52%, #DCD3C8 100%)',
-  primaryAction: 'linear-gradient(110deg, #FF641F 0%, #FF7938 100%)',
+  screen: 'linear-gradient(160deg, #F7F3EE 0%, #F4EFE9 55%, #EEE7DF 100%)',
+  primaryAction: 'linear-gradient(110deg, #F66216 0%, #FF7E3B 100%)',
 } as const;
 
+/** Shallow, warm, diffuse. No heavy gray drops, bevels or neumorphic grooves. */
 export const shadows = {
-  soft: 'inset 0 1px 0 rgba(255,255,255,0.7), 0 8px 24px rgba(66,46,28,0.06)',
-  floating: 'inset 0 1px 0 rgba(255,255,255,0.7), 0 5px 14px rgba(66,46,28,0.08)',
-  primaryHover: 'inset 0 1px 0 rgba(255,255,255,0.24), 0 4px 12px rgba(111,47,13,0.12)',
-  primary: 'inset 0 1px 0 rgba(255,255,255,0.24)',
+  soft: 'inset 0 1px 0 rgba(255,255,255,0.85), 0 1px 2px rgba(80,58,38,0.05), 0 10px 26px rgba(80,58,38,0.08)',
+  floating: 'inset 0 1px 0 rgba(255,255,255,0.85), 0 2px 6px rgba(80,58,38,0.06), 0 14px 32px rgba(80,58,38,0.11)',
+  primary: '0 8px 18px rgba(246,98,22,0.26)',
+  primaryHover: '0 10px 22px rgba(246,98,22,0.32)',
+  primaryPressed: '0 3px 8px rgba(246,98,22,0.2)',
 } as const;
 
 /** Spacing scale: 4, 8, 12, 16, 20, 24, 32, 40, 48, 64 */
@@ -70,36 +90,41 @@ export const layout = {
   screenPaddingCompact: 16,
   compactBreakpoint: 360,
   stackGap: 16,
-  cardPadding: 20,
+  cardPadding: 18,
   cardPaddingCompact: 16,
   minTouch: 44,
   primaryButtonHeight: 52,
-  composerHeight: 64,
-  micSize: 48,
-  tileMinHeight: 88,
+  composerHeight: 62,
+  micSize: 50,
+  tileMinHeight: 96,
   statusIcon: 24,
   statusRowMinHeight: 56,
+  iconWell: 44,
+  avatar: 36,
 } as const;
 
 export const radius = {
-  card: 24,
-  tile: 20,
-  bubble: 22,
-  bubbleTail: 8,
-  strip: 20,
+  card: 22,
+  tile: 18,
+  bubble: 20,
+  bubbleTail: 6,
+  strip: 18,
+  well: 14,
   pill: 999,
 } as const;
 
-/** Sizes are px; letterSpacing is the kit's em value × fontSize (RN uses px). */
+/** Sizes are px; letterSpacing is the em value × fontSize (RN uses px). System sans only. */
 export const type = {
-  title: { fontSize: 30, lineHeight: 35, fontWeight: '600', letterSpacing: -1.05 },
-  section: { fontSize: 18, lineHeight: 24, fontWeight: '600', letterSpacing: -0.36 },
-  hero: { fontSize: 18, lineHeight: 26, fontWeight: '400', letterSpacing: -0.27 },
-  body: { fontSize: 16, lineHeight: 24, fontWeight: '400', letterSpacing: -0.16 },
-  button: { fontSize: 16, lineHeight: 20, fontWeight: '600', letterSpacing: -0.16 },
-  label: { fontSize: 14, lineHeight: 20, fontWeight: '500', letterSpacing: -0.14 },
-  meta: { fontSize: 12, lineHeight: 18, fontWeight: '400', letterSpacing: 0 },
-  wordmark: { fontSize: 14, lineHeight: 20, fontWeight: '500', letterSpacing: 4.2 },
+  display: { fontSize: 38, lineHeight: 42, fontWeight: '700', letterSpacing: -1.3 },
+  title: { fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: -0.8 },
+  section: { fontSize: 17, lineHeight: 23, fontWeight: '600', letterSpacing: -0.3 },
+  hero: { fontSize: 18, lineHeight: 26, fontWeight: '400', letterSpacing: -0.25 },
+  body: { fontSize: 16, lineHeight: 23, fontWeight: '400', letterSpacing: -0.15 },
+  button: { fontSize: 16, lineHeight: 20, fontWeight: '600', letterSpacing: -0.1 },
+  label: { fontSize: 14, lineHeight: 19, fontWeight: '500', letterSpacing: -0.1 },
+  meta: { fontSize: 12, lineHeight: 17, fontWeight: '400', letterSpacing: 0 },
+  eyebrow: { fontSize: 11, lineHeight: 14, fontWeight: '600', letterSpacing: 2.2 },
+  wordmark: { fontSize: 15, lineHeight: 20, fontWeight: '500', letterSpacing: 5.4 },
   eta: { fontSize: 28, lineHeight: 34, fontWeight: '500', letterSpacing: -0.84 },
 } as const;
 

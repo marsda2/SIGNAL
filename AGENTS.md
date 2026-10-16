@@ -43,6 +43,7 @@ A visitor taps a place-specific NFC chip, opens a responsive chat with the Pip m
 - [~] E. Anchor: update + read-back verify wired (`/api/actions/*`, REST via fetch — the `anchorbrowser` runtime imports Playwright and breaks the Metro server build); untested live
 - [~] F. Pip: 5 cue script (`npm run cues`) + captions/playback; audio not generated (key lacks `text_to_speech`); art still placeholder
 - [~] G. Phoenix spans wired (`src/lib/tracing.ts`), need collector env. NFC verifier, demo call pending
+- [~] Twilio approved outbound call: `/api/actions/call`, `/api/webhooks/twilio/status`, `src/lib/twilio.ts` (see `docs/11_TWILIO.md`); builds and unit-checked, **no live call yet** (needs `TWILIO_*` + `DEMO_APPROVED_PHONE_E164`)
 - [ ] H. Mandatory test matrix (docs/06), 3-minute pitch, recorded backup demo
 - [x] Daytona: `npm run daytona:smoke [-- --serve]` (`scripts/daytona-smoke.mjs`)
 

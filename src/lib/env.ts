@@ -25,6 +25,9 @@ export function integrationConfig() {
     anchor: has('ANCHORBROWSER_API_KEY'),
     elevenlabs: has('ELEVENLABS_API_KEY'),
     portalPublicUrl: Boolean(process.env.MAINTENANCE_PORTAL_BASE_URL?.trim()) && !/localhost|127\.0\.0\.1/.test(process.env.MAINTENANCE_PORTAL_BASE_URL ?? ''),
+    twilio: has('TWILIO_ACCOUNT_SID', 'TWILIO_PHONE_NUMBER') && (has('TWILIO_AUTH_TOKEN') || has('TWILIO_API_KEY', 'TWILIO_API_SECRET')),
+    twilioWebhookSigning: has('TWILIO_AUTH_TOKEN'),
+    approvedCallNumber: has('DEMO_APPROVED_PHONE_E164'),
     elevenlabsCalls: has('ELEVENLABS_API_KEY', 'ELEVENLABS_AGENT_ID', 'ELEVENLABS_AGENT_PHONE_NUMBER_ID'),
     phoenix: has('PHOENIX_COLLECTOR_ENDPOINT'),
   };
