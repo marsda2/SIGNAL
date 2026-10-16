@@ -183,7 +183,7 @@ async function q<T>(sql: string, vars?: Record<string, unknown>): Promise<T[]> {
 }
 
 // In-process fallback (survives hot reloads via globalThis).
-type LocalStore = { incidents: Map<string, Incident>; actions: Map<string, ActionAttempt>; audit: AuditEvent[]; spaces: Map<string, Space> };
+type LocalStore = { incidents: Map<string, Incident>; actions: Map<string, ActionAttempt>; audit: AuditEvent[]; spaces: Map<string, Space>; outbox?: DemoEmail[] };
 const g = globalThis as unknown as { __signalCore?: LocalStore };
 function local(): LocalStore {
   if (!g.__signalCore) {
@@ -406,6 +406,28 @@ export async function audit(e: Omit<AuditEvent, 'at'>): Promise<void> {
   } catch (err) {
     console.error('[audit] failed to persist', event, err);
   }
+}
+
+// ---------- demo email outbox (EMAIL_MODE=demo: SIGNAL "sends" here instead of a real mailbox) ----------
+
+export type DemoEmail = { key: string; spaceId: string; incidentKey: string; reference: string; to: string; subject: string; text: string; at: string };
+
+export async function storeDemoEmail(e: Omit<DemoEmail, 'at'>): Promise<DemoEmail> {
+  const mail = { ...e, at: now() };
+  if (coreBackend() === 'local') (local().outbox ??= []).push(mail);
+  else await q('CREATE demo_email CONTENT $doc', { doc: mail });
+  return mail;
+}
+
+/** Read-after-write for demo emails: look the message up by its reference. */
+export async function findDemoEmail(reference: string): Promise<DemoEmail | undefined> {
+  if (coreBackend() === 'local') return (local().outbox ?? []).find((m) => m.reference === reference);
+  return (await q<DemoEmail>('SELECT * FROM demo_email WHERE reference = $reference LIMIT 1', { reference }))[0];
+}
+
+export async function listDemoEmails(limit = 30): Promise<DemoEmail[]> {
+  if (coreBackend() === 'local') return [...(local().outbox ?? [])].reverse().slice(0, limit);
+  return q<DemoEmail>('SELECT * FROM demo_email ORDER BY at DESC LIMIT $limit', { limit });
 }
 
 export async function recentAudit(limit = 30): Promise<AuditEvent[]> {

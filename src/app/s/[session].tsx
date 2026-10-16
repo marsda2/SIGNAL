@@ -667,6 +667,7 @@ const EXTERNAL_STATE_COPY: Record<string, string> = {
 
 const EMAIL_STATE_COPY: Record<string, string> = {
   PENDING: 'Sending the email…',
+  VERIFIED: 'DEMO: SIGNAL delivered your report to the demo facilities inbox and read it back. No real email was sent.',
   AGENT_REPORTED: 'SIGNAL emailed your report to the facilities team. The email was accepted for delivery; nobody has confirmed reading it yet.',
   FAILED: 'The email could not be sent. Nobody was notified.',
 };

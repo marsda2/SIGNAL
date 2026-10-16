@@ -53,11 +53,9 @@ export async function POST(request: Request) {
   const result = await withSpan('tool.email.escalation', 'TOOL', { 'tool.name': 'send_escalation_email', 'signal.attempt': attempt.key }, async () => {
     try {
       const sent = await sendEscalationEmail(space, { draft: attempt.note, incidentKey: incident!.key, reference: attempt.reference });
-      await addIncidentNote(incident!.key, { by: 'signal_email', text: `Emailed facilities (provider id ${sent.id})` }).catch(() => undefined);
-      return updateAttempt(attempt.key, {
-        state: 'AGENT_REPORTED',
-        evidence: `Email accepted by the provider (id ${sent.id}) for the facilities inbox. Delivery and reading are not confirmed.`,
-      });
+      await addIncidentNote(incident!.key, { by: 'signal_email', text: sent.mode === 'demo' ? `Demo email to facilities (${sent.id})` : `Emailed facilities (provider id ${sent.id})` }).catch(() => undefined);
+      // Demo: read back from our own outbox → VERIFIED (clearly labelled demo). Real email: provider accepted ≠ read.
+      return updateAttempt(attempt.key, { state: sent.verified ? 'VERIFIED' : 'AGENT_REPORTED', evidence: sent.evidence });
     } catch (e) {
       return updateAttempt(attempt.key, { state: 'FAILED', error: e instanceof Error ? e.message : String(e) });
     }
