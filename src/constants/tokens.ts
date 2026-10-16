@@ -1,17 +1,24 @@
-// Brand tokens from docs/05_BRAND_AND_UX.md (mirrors examples/design-tokens.css).
+// App-wide tokens. Values come from the SIGNAL design system (src/design/tokens.ts, docs/UI-STYLE-GUIDE.md);
+// key names are kept so existing screens restyle without code changes.
+import { palette } from '@/design/tokens';
+
 export const colors = {
-  ink: '#192831',
-  signal: '#D5FF72',
-  sea: '#2C766C',
-  paper: '#F7F8F4',
-  surface: '#FFFFFF',
-  muted: '#617077',
-  line: '#E2E7E4',
-  alert: '#C55236',
-  warning: '#E2B157',
+  ink: palette.text, // charcoal: text + icons
+  signal: palette.accent, // primary action orange (label on it stays charcoal)
+  sea: palette.accentInk, // link / orange text (accent itself is too light for small text)
+  paper: palette.canvas, // warm page background
+  surface: palette.surfaceSolid, // opaque card / input surface
+  muted: palette.textSecondary, // secondary text (4.5:1 on canvas)
+  line: 'rgba(64,49,36,0.12)', // dividers / input borders
+  alert: palette.errorInk, // failure
+  warning: palette.accentSoft, // unresolved / attention fill (pair with charcoal text)
+  success: palette.success,
+  successInk: palette.successInk,
+  successSoft: palette.successSoft,
 } as const;
 
-export const radius = { sm: 10, md: 16, lg: 24 } as const;
+// card 24 · bubble/input 22 · small chips 12 (SIGNAL kit)
+export const radius = { sm: 12, md: 22, lg: 24 } as const;
 
 export const space = { xs: 4, sm: 8, md: 16, lg: 24, xl: 40 } as const;
 

@@ -12,10 +12,15 @@ export type ComposerProps = {
   onChangeText: (text: string) => void;
   /** Required: a composer that cannot submit must not ship. */
   onSend: () => void;
-  onStartRecording: () => void;
-  onStopRecording: () => void;
+  /** Voice is optional: omit both recording handlers to render a text-only composer (no mic). */
+  onStartRecording?: () => void;
+  onStopRecording?: () => void;
   /** e.g. "0:07" — shown while recording. */
   elapsed?: string;
+  /** Overrides the default "Tell me what’s wrong" hint. */
+  placeholder?: string;
+  /** Blocks sending (e.g. a request is in flight) without hiding the typed text. */
+  disabled?: boolean;
 };
 
 /**
@@ -31,23 +36,28 @@ export function Composer({
   onStartRecording,
   onStopRecording,
   elapsed,
+  placeholder = copy.inputHint,
+  disabled,
 }: ComposerProps) {
   const recording = state === 'recording';
   const busy = state === 'processing';
-  const canSend = value.trim().length > 0 && !recording && !busy;
+  const hasVoice = !!(onStartRecording && onStopRecording);
+  const canSend = value.trim().length > 0 && !recording && !busy && !disabled;
 
   return (
     <View style={styles.wrap}>
       <View style={styles.capsule}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={recording ? 'Stop recording' : 'Start voice recording'}
-          accessibilityState={{ busy }}
-          disabled={busy || state === 'blocked'}
-          onPress={recording ? onStopRecording : onStartRecording}
-          style={[styles.mic, (busy || state === 'blocked') && styles.micDisabled]}>
-          <Glyph name={recording ? 'check' : 'mic'} size={18} />
-        </Pressable>
+        {hasVoice ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={recording ? 'Stop recording' : 'Start voice recording'}
+            accessibilityState={{ busy }}
+            disabled={busy || state === 'blocked'}
+            onPress={recording ? onStopRecording : onStartRecording}
+            style={[styles.mic, (busy || state === 'blocked') && styles.micDisabled]}>
+            <Glyph name={recording ? 'check' : 'mic'} size={18} />
+          </Pressable>
+        ) : null}
 
         {recording || busy ? (
           <View style={styles.status} accessibilityRole="text" accessibilityLiveRegion="polite">
@@ -58,7 +68,7 @@ export function Composer({
         ) : (
           <TextInput
             accessibilityLabel="Describe the issue"
-            placeholder={copy.inputHint}
+            placeholder={placeholder}
             placeholderTextColor={palette.textMuted}
             value={value}
             onChangeText={onChangeText}
@@ -113,7 +123,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingVertical: 10,
-    paddingHorizontal: 4,
+    paddingHorizontal: 12,
     color: palette.text,
     ...type.body,
   },

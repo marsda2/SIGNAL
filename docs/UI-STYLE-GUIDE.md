@@ -76,6 +76,12 @@ heavy gray drops, bevels, or neumorphic grooves.
 - No blur library is installed. If you want real blur, add `expo-blur` (`npx expo install expo-blur`) and apply it to a
   single top-level card only; keep `surface="solid"` as the reduced-transparency path.
 - Increase opacity before increasing blur when readability is weak.
+- **Web SSR caveat:** this app renders web on the server (`web.output: "server"`) and RN-web drops `backgroundImage`
+  gradients during SSR, which causes a hydration mismatch. `src/components/ui.tsx` and the layout therefore use flat
+  `canvas` / `accent` fills. `src/design/*` (`SignalScreen`, `SignalButton`) still use gradients; render them
+  client-only or swap to flat fills if you use them on SSR routes.
+- **Legacy bridge:** `src/constants/tokens.ts` (`colors`, `radius`) now derives from `src/design/tokens.ts`, so older
+  screens restyle automatically. New work should import from `@/design` directly.
 
 ## 6. Components
 

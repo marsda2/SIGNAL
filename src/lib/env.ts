@@ -20,10 +20,11 @@ export function integrationConfig() {
   return {
     agentMemory: has('AGENT_MEMORY_ENDPOINT', 'AGENT_MEMORY_CONTEXT_ID', 'AGENT_MEMORY_API_KEY'),
     surrealCore: has('SURREALDB_URL', 'SURREALDB_USERNAME', 'SURREALDB_PASSWORD'),
-    llm: has('ANTHROPIC_API_KEY'),
+    llm: has('GEMINI_API_KEY') || has('GOOGLE_GENERATIVE_AI_API_KEY'),
     daytona: has('DAYTONA_API_KEY'),
     anchor: has('ANCHORBROWSER_API_KEY'),
     elevenlabs: has('ELEVENLABS_API_KEY'),
+    portalPublicUrl: Boolean(process.env.MAINTENANCE_PORTAL_BASE_URL?.trim()) && !/localhost|127\.0\.0\.1/.test(process.env.MAINTENANCE_PORTAL_BASE_URL ?? ''),
     elevenlabsCalls: has('ELEVENLABS_API_KEY', 'ELEVENLABS_AGENT_ID', 'ELEVENLABS_AGENT_PHONE_NUMBER_ID'),
     phoenix: has('PHOENIX_COLLECTOR_ENDPOINT'),
   };

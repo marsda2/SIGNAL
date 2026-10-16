@@ -90,7 +90,23 @@ export type ChatEvent =
   | { type: 'text'; text: string }
   | { type: 'step'; label: string; status: 'started' | 'done' | 'failed' }
   | { type: 'source'; title: string; text: string; occurredAt?: string }
-  | { type: 'notice'; code: 'llm_not_configured' | 'memory_unavailable'; message: string }
+  | { type: 'notice'; code: 'llm_not_configured' | 'memory_unavailable' | 'core_unavailable' | 'core_local' | 'policy_blocked'; message: string }
+  | { type: 'incident'; incident: IncidentView; relation: 'linked' | 'created' }
+  /** Server-authorized offer. The UI shows a button; nothing happens until the visitor taps it. */
+  | { type: 'approval'; actionId: string; kind: 'CREATE_INCIDENT' | 'UPDATE_PORTAL'; label: string; incidentKey?: string; summary?: string; assetId?: string | null }
+  | { type: 'cue'; cue: CueName; caption: string }
   | { type: 'completed'; outcome: string; traceId?: string };
+
+export type IncidentView = {
+  key: string;
+  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED';
+  summary: string;
+  reportedAt: string;
+  updatedAt: string;
+  source: string;
+  lastNote?: string;
+};
+
+export type CueName = 'greeting' | 'thinking' | 'solved' | 'escalating' | 'safety';
 
 export type PipState = 'idle' | 'listening' | 'thinking' | 'helping' | 'solved' | 'escalating';

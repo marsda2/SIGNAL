@@ -15,6 +15,9 @@ export type EscalationCardProps = {
   requesting?: boolean;
   /** Real request status text while requesting, e.g. "Calling maintenance…". Never render a pending request as success. */
   requestStatus?: string;
+  /** Defaults to "Approve call". Set for non-call approvals, e.g. "Create a ticket". */
+  approveLabel?: string;
+  declineLabel?: string;
   onApprove: () => void;
   onDecline: () => void;
 };
@@ -29,6 +32,8 @@ export function EscalationCard({
   consequence,
   requesting,
   requestStatus,
+  approveLabel = copy.approve,
+  declineLabel = copy.keepTroubleshooting,
   onApprove,
   onDecline,
 }: EscalationCardProps) {
@@ -56,11 +61,11 @@ export function EscalationCard({
       ) : (
         <View style={styles.actions}>
           <SignalButton
-            label={copy.approve}
+            label={approveLabel}
             trailing={<Glyph name="arrow-right" />}
             onPress={onApprove}
           />
-          <SignalButton variant="quiet" label={copy.keepTroubleshooting} onPress={onDecline} />
+          <SignalButton variant="quiet" label={declineLabel} onPress={onDecline} />
         </View>
       )}
     </GlassCard>

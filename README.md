@@ -12,12 +12,12 @@ Full product/architecture spec lives in [`docs/`](docs/) (start with [`docs/play
 | App | **Expo SDK 58 + Expo Router** (React Native + web), `web.output = "server"` so `src/app/api/**` are real server routes |
 | Hosting | **Vercel** — `expo export -p web` → static client + `api/index.js` serverless handler (`expo-server/adapter/vercel`) |
 | Memory | **SurrealDB Agent Memory** via the official `@surrealdb/memory` client |
-| Operational DB | SurrealDB Core (not wired yet) |
-| LLM | Vercel AI SDK + Anthropic (`ANTHROPIC_API_KEY`) |
-| Browser agent | Anchor Browser (`anchorbrowser`) — allowlisted to our own `/demo/maintenance` portal |
-| Voice / calls | ElevenLabs (cached cues, later outbound calls) + Twilio |
-| Dev sandbox | Daytona (`@daytona/sdk`) |
-| Tracing | Arize Phoenix (not wired yet) |
+| Operational DB | SurrealDB Core (`surrealdb` SDK, `src/lib/core.ts`) — falls back to a labelled in-process `local` store when `SURREALDB_*` is blank |
+| LLM | Vercel AI SDK + Google **Gemini 3.8 Flash**, thinking level `medium` (`GEMINI_API_KEY`, `src/lib/agent/model.ts`) |
+| Browser agent | Anchor Browser REST (`src/lib/anchor.ts`, SDK types only) — allowlisted to our own `/demo/maintenance` portal, verified by Core read-back |
+| Voice / calls | ElevenLabs cached cues (`npm run cues` → `public/audio`); outbound calls off |
+| Dev sandbox | Daytona (`npm run daytona:smoke [-- --serve]`) |
+| Tracing | Arize Phoenix via `@arizeai/phoenix-otel` (`src/lib/tracing.ts`, OpenInference span kinds) |
 
 ## Quick start
 
@@ -48,12 +48,16 @@ curl -X POST http://localhost:8081/api/memory/seed -H "x-demo-secret: <DEMO_OPER
 | Agent Memory write/recall, location-scoped via `location=room204` labels | **Live, verified** (`npm run smoke:memory`, `/api/chat`) |
 | `/api/health` integration board + `/admin` | **Live** |
 | Safety gate (smoke/fire/etc → safety handoff, no model call) | **Live** |
-| `/api/chat` LLM reply | Wired, **untested** until `ANTHROPIC_API_KEY` is set; without it the UI shows recalled memory + a visible notice |
+| `/api/chat` decision (Gemini → `DecisionSchema` → `authorizeProposedAction`) | Wired; recall + Core + model call verified end to end, but the **current Gemini key returns "prepayment credits are depleted"**, so replies show a visible model-error notice until billing is topped up |
+| Approvals (HMAC-bound `actionId`) → `POST /api/incidents`, `POST /api/actions/portal-update` | Wired, untested in UI |
+| SurrealDB Core: incidents, action attempts, audit, `/api/demo/reset` | Wired. **No `SURREALDB_URL/USERNAME/PASSWORD` yet → running on the `local` store** (labelled in UI; not durable across Vercel lambdas) |
+| `/demo/maintenance` | Reads/writes Core via `/api/portal/tickets`; status chips + note + "Save update" for Anchor |
+| Anchor portal update + read-back verify (`GET /api/actions/:id`) | Wired, untested. Needs `ENABLE_ANCHOR_ACTIONS=true`, a public `MAINTENANCE_PORTAL_BASE_URL`, and durable Core (else the portal write lands in a different lambda than the verifier) |
+| ElevenLabs cues | Script + chat playback/captions wired. **Not generated**: current key lacks `text_to_speech` permission. Captions always render |
+| Phoenix traces | Spans for chat/recall/LLM/policy/tools wired; **inactive** until `PHOENIX_COLLECTOR_ENDPOINT` (+ `PHOENIX_API_KEY`) is set |
+| Daytona | `npm run daytona:smoke` uploads repo (no secrets), runs `npm ci`, typecheck, NFC tests |
 | NFC `/t` | **Simulation only**, labelled `DEMO / NFC simulation`. No SUN/SDM verification yet |
-| Pip mascot | Placeholder capsule with 6 states + text labels; no audio yet |
-| `/demo/maintenance` | Read-only synthetic tickets; not yet backed by a DB, so Anchor can't persist/verify an update |
-| SurrealDB Core, incidents, approvals, audit log | Not started |
-| Anchor actions, ElevenLabs cues/calls, Phoenix traces | Keys present / SDKs installed, **no code yet** |
+| Pip mascot | Placeholder capsule with 6 states + text labels |
 | Vercel deploy | **Live:** https://signal-three-iota.vercel.app (project `signal`, GitHub-connected; `/api/health`, `/t` verified). Not yet tested on a phone over cellular |
 
 Rule: only show behaviour that actually runs. Seeded/simulated data is labelled.

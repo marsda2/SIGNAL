@@ -12,7 +12,8 @@ A visitor taps a place-specific NFC chip, opens a responsive chat with the Pip m
 - Path alias `@/*` → `src/*`. Server-only code (`src/lib/env.ts`, `src/lib/memory.ts`) must never be imported from screens.
 - Agent Memory: `@surrealdb/memory` → `new AgentMemory({ endpoint, context, apiKey })`; `remember(text, {infer, labels, scopes})`, `recall(query, {k, mode, labels, lens})`. Note the option is **`scopes`** (the playbook's `examples/surreal-memory.ts` says `scope` — wrong). Read `node_modules/@surrealdb/memory/dist/memory.d.ts` before calling anything new.
 - Learned the hard way (Scouty playground): `infer: 'none'` for literal writes; `observed_at` only valid with `infer: full|triples`; hybrid recall returns merely *related* hits, so "seen before" logic needs its own similarity check; a no-result query can take 6–9 s.
-- Env var names: `AGENT_MEMORY_*`, `ANCHORBROWSER_API_KEY` (SDK default), `DAYTONA_API_KEY`, `ELEVENLABS_*`, `ANTHROPIC_API_KEY`. Template in `.env.example`.
+- Env var names: `AGENT_MEMORY_*`, `ANCHORBROWSER_API_KEY` (SDK default), `DAYTONA_API_KEY`, `ELEVENLABS_*`, `GEMINI_API_KEY` + `AI_MODEL` + `AI_THINKING_LEVEL`. Template in `.env.example`.
+- Don't import runtime code from `anchorbrowser` (pulls Playwright into the Metro server bundle → build fails). Use `import type` + `src/lib/anchor.ts`.
 - PowerShell 5.1 `Set-Content -Encoding utf8` writes a BOM that breaks `package.json`; write JSON with .NET `UTF8Encoding($false)` or the editor tools. `git` is not on PATH on this machine — use `C:\Users\marki\AppData\Local\GitHubDesktop\app-*\resources\app\git\cmd\git.exe`.
 - `src/design/**` is owned by a separate "UI guide and components template" session. Do not edit it without checking with the user; it may have in-progress type errors.
 
@@ -37,13 +38,13 @@ A visitor taps a place-specific NFC chip, opens a responsive chat with the Pip m
 - [x] A. Skeleton: Expo app, `/t`, `/demo/maintenance`, Vercel config (not yet deployed)
 - [x] C. Scoped Agent Memory write/recall with provenance (`location=room204` labels)
 - [ ] A2. Deploy to Vercel, test `/api/health` + `/t` on cellular
-- [ ] B. SurrealDB Core: seed Room 204, incidents, tag→location map, audit events (`surrealdb` SDK; not installed yet)
-- [ ] D. Chat GUIDE / LINK_EXISTING / CREATE branches using `DecisionSchema` + `authorizeProposedAction`; set `ANTHROPIC_API_KEY`
-- [ ] E. Anchor: update + read-back verify one ticket on `/demo/maintenance` (needs Core-backed portal); show `live_view_url`
-- [ ] F. Pip: real 6-state art + 5 cached ElevenLabs cues in `public/audio`
-- [ ] G. NFC verifier (only if tag provisioned), Phoenix spans, optional approved demo call
+- [~] B. SurrealDB Core: incidents, action attempts, audit wired in `src/lib/core.ts` (`surrealdb` 2.x); needs `SURREALDB_*` creds (local fallback otherwise). Tag→location map still in NFC config
+- [x] D. Chat GUIDE / LINK_EXISTING / CREATE branches using `DecisionSchema` + `authorizeProposedAction` (Gemini 3.8 Flash, `GEMINI_API_KEY`)
+- [~] E. Anchor: update + read-back verify wired (`/api/actions/*`, REST via fetch — the `anchorbrowser` runtime imports Playwright and breaks the Metro server build); untested live
+- [~] F. Pip: 5 cue script (`npm run cues`) + captions/playback; audio not generated (key lacks `text_to_speech`); art still placeholder
+- [~] G. Phoenix spans wired (`src/lib/tracing.ts`), need collector env. NFC verifier, demo call pending
 - [ ] H. Mandatory test matrix (docs/06), 3-minute pitch, recorded backup demo
-- [ ] Daytona: run dev + smoke tests in a sandbox (`@daytona/sdk`); document reproducible setup
+- [x] Daytona: `npm run daytona:smoke [-- --serve]` (`scripts/daytona-smoke.mjs`)
 
 ## Definition of done
 

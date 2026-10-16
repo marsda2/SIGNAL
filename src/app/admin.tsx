@@ -7,7 +7,8 @@ import { space } from '@/constants/tokens';
 type Health = {
   configured: Record<string, boolean>;
   flags: Record<string, boolean | string>;
-  live: { agentMemory: { ok: boolean; error?: string } };
+  live: Record<string, { ok: boolean; error?: string; backend?: string }>;
+  model?: string;
   time: string;
 };
 
@@ -42,10 +43,15 @@ export default function Admin() {
               <Badge label={ok ? 'configured' : 'missing'} tone={ok ? 'ok' : 'warn'} />
             </View>
           ))}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={text.body}>Agent Memory live check</Text>
-            <Badge label={health.live.agentMemory.ok ? 'reachable' : (health.live.agentMemory.error ?? 'down')} tone={health.live.agentMemory.ok ? 'ok' : 'alert'} />
-          </View>
+          {Object.entries(health.live).map(([name, probe]) => (
+            <View key={name} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={text.body}>
+                {name} live check{probe.backend ? ` (${probe.backend})` : ''}
+              </Text>
+              <Badge label={probe.ok ? (probe.backend === 'local' ? 'local store' : 'reachable') : (probe.error ?? 'down')} tone={probe.ok ? (probe.backend === 'local' ? 'warn' : 'ok') : 'alert'} />
+            </View>
+          ))}
+          {health.model && <Text style={text.mono}>model {health.model}</Text>}
           <Text style={text.mono}>checked {health.time}</Text>
         </Card>
       )}

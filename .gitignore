@@ -46,3 +46,5 @@ example
 .env
 .vercel
 .mcp.local.json
+.vercel
+.env*
