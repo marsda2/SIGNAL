@@ -2,7 +2,7 @@ import { generateObject } from 'ai';
 import { z } from 'zod';
 
 import { authorizeProposedAction, DecisionSchema, type AgentDecision, type ChatEvent } from '@/lib/agent/contracts';
-import { chatModel, chatProviderOptions, modelId } from '@/lib/agent/model';
+import { chatModel, chatProviderOptions, modelId, fallbackModelId } from '@/lib/agent/model';
 import { findSimilar, matchFaq, spacePromptBlocks, type SimilarReport } from '@/lib/agent/space-context';
 import { emailConfigured } from '@/lib/email';
 import { buildReportDraft } from '@/lib/anchor';
@@ -12,6 +12,7 @@ import { audit, coreBackend, listIncidents, toView, type Incident, type Space } 
 import { flags, integrationConfig } from '@/lib/env';
 import { recallForLocation, type RecalledFact } from '@/lib/memory';
 import { flushTraces, traceIdOf, withSpan } from '@/lib/tracing';
+import { withinDeadline } from '@/lib/deadline';
 
 const Body = z.object({
   message: z.string().min(1).max(1000),
@@ -50,6 +51,10 @@ function incidentBlock(incidents: Incident[]) {
 }
 
 /** POST /api/chat — safety gate → space + memory + Core → deterministic "seen before" → Gemini decision → policy gate → typed events. */
+export function GET() {
+  return Response.json({ error: 'method_not_allowed', message: 'Send chat messages using POST.' }, { status: 405, headers: { Allow: 'POST' } });
+}
+
 export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'invalid_body' }, { status: 400 });
@@ -57,7 +62,12 @@ export async function POST(request: Request) {
   // A signed NFC session (header x-signal-session) decides the location; NFC-only spaces refuse requests without one.
   const session = sessionFrom(request);
   const locationId = session?.loc ?? parsed.data.locationId;
-  const access = await visitorAccess(request, locationId);
+  let access;
+  try {
+    access = await withinDeadline('space.access', 8000, () => visitorAccess(request, locationId));
+  } catch {
+    return Response.json({ error: 'space_unavailable', message: 'The space database is taking too long. Please try again.' }, { status: 503 });
+  }
   if (!access.ok) return denied(access);
   const sp: Space = access.space;
 
@@ -147,7 +157,7 @@ export async function POST(request: Request) {
 
     if (HAZARD.test(message)) {
       await withSpan('safety.gate', 'GUARDRAIL', { 'signal.hazard': true }, async () => undefined);
-      await audit({ kind: 'safety.handoff', actor: 'visitor', subject: locationId, detail: message.slice(0, 200) });
+      await withinDeadline('safety.audit', 2000, () => audit({ kind: 'safety.handoff', actor: 'visitor', subject: locationId, detail: message.slice(0, 200) })).catch(() => undefined);
       events.push(
         { type: 'avatar', state: 'escalating' },
         { type: 'cue', cue: 'safety', caption: 'Safety alert: stop and get staff.' },
@@ -161,10 +171,13 @@ export async function POST(request: Request) {
     events.push({ type: 'avatar', state: 'thinking' }, { type: 'step', label: `Checking what happened in ${sp.name} before…`, status: 'started' });
 
     let facts: RecalledFact[] = [];
+    // Start independent reads together; attach rejection handling immediately.
+    const incidentRead = withinDeadline('core.incidents', 8000, () => listIncidents(locationId))
+      .then((rows) => ({ ok: true as const, rows }), () => ({ ok: false as const }));
     if (configured.agentMemory) {
       try {
         const recalled = await withSpan('memory.recall', 'RETRIEVER', { 'input.value': message }, async (span) => {
-          const r = await recallForLocation(locationId, message);
+          const r = await withinDeadline('memory.recall', 10000, () => recallForLocation(locationId, message));
           span.setAttribute('retrieval.documents.count', r.facts.length);
           span.setAttribute('signal.memory.query_ms', r.queryMs);
           r.facts.forEach((f, i) => span.setAttribute(`retrieval.documents.${i}.document.content`, f.text.slice(0, 500)));
@@ -180,10 +193,18 @@ export async function POST(request: Request) {
     }
     for (const f of facts.slice(0, 3)) events.push({ type: 'source', title: f.source ?? 'Agent Memory', text: f.text, occurredAt: f.occurredAt });
 
-    try {
-      incidents = await listIncidents(locationId);
-    } catch (e) {
-      events.push({ type: 'notice', code: 'core_unavailable', message: `Incident database unreachable: ${e instanceof Error ? e.message : String(e)}` });
+    const incidentResult = await incidentRead;
+    if (incidentResult.ok) {
+      incidents = incidentResult.rows;
+    } else {
+      // An unavailable database is not evidence that no matching report exists.
+      events.push(
+        { type: 'notice', code: 'core_unavailable', message: 'The incident database is unavailable. I could not check existing reports.' },
+        { type: 'text', text: 'I couldn’t check the current reports for this space. Please try again shortly. No report has been created or sent.' },
+        { type: 'avatar', state: 'idle' },
+        { type: 'completed', outcome: 'core_unavailable', traceId },
+      );
+      return events;
     }
 
     // Deterministic "seen before" — runs with or without the model.
@@ -250,13 +271,23 @@ export async function POST(request: Request) {
         `CONVERSATION SO FAR:\n${transcript || '(start)'}`,
         `Visitor: ${message}`,
       ].join('\n\n');
-      decision = await withSpan('llm.decide', 'LLM', { 'llm.model_name': modelId(), 'llm.provider': 'google', 'input.value': prompt }, async (span) => {
-        const { object, usage } = await generateObject({ model: chatModel(), schema: DecisionSchema, system: SYSTEM, prompt, providerOptions: chatProviderOptions() });
+      const runModel = (id: string, budgetMs: number) => withSpan('llm.decide', 'LLM', { 'llm.model_name': id, 'llm.provider': 'google', 'input.value': prompt }, async (span) => {
+        const controller = new AbortController();
+        const { object, usage } = await withinDeadline(`llm.decide:${id}`, budgetMs, () => generateObject({
+          model: chatModel(id), schema: DecisionSchema, system: SYSTEM, prompt,
+          providerOptions: chatProviderOptions(id), maxRetries: 0, abortSignal: controller.signal,
+        })).finally(() => controller.abort());
         span.setAttribute('output.value', JSON.stringify(object));
         if (usage?.inputTokens) span.setAttribute('llm.token_count.prompt', usage.inputTokens);
         if (usage?.outputTokens) span.setAttribute('llm.token_count.completion', usage.outputTokens);
         return object;
       });
+      try {
+        decision = await runModel(modelId(), 15000);
+      } catch (error) {
+        if (fallbackModelId() === modelId()) throw error;
+        decision = await runModel(fallbackModelId(), 10000);
+      }
     } catch (e) {
       recordsReply(`Model call failed (${e instanceof Error ? e.message.slice(0, 160) : String(e)}).`);
       return events;
@@ -321,6 +352,6 @@ export async function POST(request: Request) {
     return events;
   });
 
-  await flushTraces();
+  await withinDeadline('tracing.flush', 1000, flushTraces).catch(() => undefined);
   return Response.json({ events });
 }

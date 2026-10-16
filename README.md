@@ -91,6 +91,8 @@ Rule: only show behaviour that actually runs. Seeded/simulated data is labelled.
 
 ## Quick start
 
+Chat timeout protection: space access waits at most 8 s; memory (10 s) and incident reads (8 s) run concurrently. The configured `AI_MODEL` gets 15 s, then `AI_FALLBACK_MODEL` (default `gemini-3.5-flash-lite`, minimal thinking) gets 10 s. Both use zero automatic retries. If both fail, Pip returns an explicitly labelled answer from the space's records. A Core outage never counts as an empty incident history. Trace flushing waits at most 1 s. Vercel logs contain `chat.stage` timings without prompt text. Run `node --test scripts/chat-timeout.test.cjs` for simulated provider-hang regression tests. The fallback uses the same Gemini account, so it cannot bypass depleted credits; records-only answers do not require model credits.
+
 ```bash
 npm install
 cp .env.example .env.local      # then fill values (file is gitignored)
