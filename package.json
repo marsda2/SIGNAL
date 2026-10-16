@@ -52,10 +52,11 @@
         "build:web": "expo export -p web",
         "serve": "expo serve",
         "smoke:memory": "node --env-file=.env.local scripts/smoke-memory.mjs",
+        "smoke:core": "node --env-file=.env.local scripts/smoke-core.mjs",
         "test:nfc": "node --test scripts/nfc.test.mjs",
-        "nfc:check":  "node --env-file-if-exists=.env.local scripts/nfc-check.mjs",
-                    "cues":  "node --env-file=.env.local scripts/gen-cues.mjs",
-                    "daytona:smoke":  "node --env-file=.env.local scripts/daytona-smoke.mjs"
+        "nfc:check": "node --env-file-if-exists=.env.local scripts/nfc-check.mjs",
+        "cues": "node --env-file=.env.local scripts/gen-cues.mjs",
+        "daytona:smoke": "node --env-file=.env.local scripts/daytona-smoke.mjs"
     },
     "private": true
 }

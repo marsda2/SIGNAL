@@ -147,11 +147,18 @@ async function db(): Promise<Surreal> {
   if (!dbPromise) {
     dbPromise = (async () => {
       const s = new Surreal();
-      await s.connect(process.env.SURREALDB_URL!.trim(), {
-        namespace: process.env.SURREALDB_NAMESPACE?.trim() || 'signal',
-        database: process.env.SURREALDB_DATABASE?.trim() || 'demo',
-        authentication: { username: process.env.SURREALDB_USERNAME!.trim(), password: process.env.SURREALDB_PASSWORD!.trim() },
-      });
+      const namespace = process.env.SURREALDB_NAMESPACE?.trim() || 'signal';
+      const database = process.env.SURREALDB_DATABASE?.trim() || 'demo';
+      const username = process.env.SURREALDB_USERNAME!.trim();
+      const password = process.env.SURREALDB_PASSWORD!.trim();
+      // SURREALDB_AUTH_LEVEL=root signs in as a root user; default is a database-level user (least privilege).
+      const authentication =
+        process.env.SURREALDB_AUTH_LEVEL?.trim() === 'root' ? { username, password } : { namespace, database, username, password };
+      await s.connect(process.env.SURREALDB_URL!.trim(), { namespace, database, authentication });
+      // SurrealDB 3 errors on SELECT from an undefined table, so a fresh instance needs these before the first read.
+      await s.query(
+        ['incident', 'space', 'action_attempt', 'audit_event'].map((t) => `DEFINE TABLE IF NOT EXISTS ${t} SCHEMALESS;`).join('\n'),
+      );
       return s;
     })().catch((e) => {
       dbPromise = undefined;
