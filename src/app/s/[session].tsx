@@ -51,7 +51,7 @@ type Item =
   | { id: string; kind: 'pip'; text: string; solvable?: boolean }
   | { id: string; kind: 'source'; title: string; text: string; occurredAt?: string }
   | { id: string; kind: 'notice'; text: string }
-  | { id: string; kind: 'caption'; text: string }
+  | { id: string; kind: 'caption'; text: string; cue: CueName }
   | { id: string; kind: 'incident'; incident: IncidentView; relation: string }
   | { id: string; kind: 'approval'; approval: Approval; status: 'offered' | 'working' | 'done' | 'declined' }
   | { id: string; kind: 'action'; attempt: Attempt }
@@ -69,14 +69,19 @@ const CUE_CAPTION: Record<CueName, string> = {
   safety: 'Safety alert.',
 };
 
-function playCue(cue: CueName) {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-  try {
-    const AudioCtor = (window as unknown as { Audio?: new (src: string) => { play: () => Promise<void> } }).Audio;
-    if (AudioCtor) new AudioCtor(`/audio/${cue}.mp3`).play().catch(() => undefined);
-  } catch {
-    /* audio is optional; captions always render */
-  }
+type CueAudio = { play: () => Promise<void>; pause: () => void };
+let currentCue: CueAudio | undefined;
+const stopCue = () => currentCue?.pause();
+
+async function playCue(cue: CueName) {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') throw new Error('audio_unsupported');
+  const AudioCtor = (window as unknown as { Audio?: new (src: string) => CueAudio }).Audio;
+  if (!AudioCtor) throw new Error('audio_unsupported');
+  stopCue();
+  // Reuse the element unlocked by the sound-toggle gesture for later asynchronous replies.
+  currentCue = currentCue ?? new AudioCtor(`/audio/${cue}.mp3`);
+  (currentCue as CueAudio & { src: string }).src = `/audio/${cue}.mp3`;
+  await currentCue.play();
 }
 
 const GREETING_ID = 'greeting';
@@ -175,13 +180,34 @@ export default function Chat() {
   const soundRef = useRef(sound);
   soundRef.current = sound;
   const lastProblem = useRef('');
+  const audioErrorShown = useRef(false);
+  useEffect(() => () => stopCue(), []);
 
   const add = (...more: Item[]) => setItems((prev) => [...prev, ...more]);
   const patch = (id: string, fn: (i: Item) => Item) => setItems((prev) => prev.map((i) => (i.id === id ? fn(i) : i)));
 
+  function speak(c: CueName) {
+    void playCue(c).catch((error: unknown) => {
+      if (error instanceof Error && error.name === 'AbortError') return; // A newer cue or mute stopped playback.
+      if (audioErrorShown.current) return;
+      audioErrorShown.current = true;
+      add({ id: nextId(), kind: 'notice', text: 'Pip’s voice clip could not play. You can tap a voice caption to retry; all guidance is available in text.' });
+    });
+  }
+
+  function toggleSound() {
+    const enabled = !soundRef.current;
+    soundRef.current = enabled;
+    setSound(enabled);
+    if (enabled) {
+      audioErrorShown.current = false;
+      cue('greeting'); // Play directly from a user gesture to unlock mobile audio.
+    } else stopCue();
+  }
+
   function cue(c: CueName, caption?: string) {
-    add({ id: nextId(), kind: 'caption', text: `🔊 ${caption ?? CUE_CAPTION[c]}` });
-    if (soundRef.current) playCue(c);
+    add({ id: nextId(), kind: 'caption', text: `🔊 ${caption ?? CUE_CAPTION[c]}`, cue: c });
+    if (soundRef.current) speak(c);
   }
 
   function history() {
@@ -199,6 +225,7 @@ export default function Chat() {
     setPip('thinking');
     if (!lastProblem.current) lastProblem.current = message;
     add({ id: nextId(), kind: 'user', text: message });
+    cue('thinking');
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -220,8 +247,8 @@ export default function Chat() {
         else if (e.type === 'seen_before') added.push({ id: nextId(), kind: 'seen', incident: e.incident, agoText: e.agoText, assetName: e.assetName });
         else if (e.type === 'escalation') added.push({ id: nextId(), kind: 'escalation', reason: e.reason, urgent: e.urgent, options: e.options });
         else if (e.type === 'cue') {
-          added.push({ id: nextId(), kind: 'caption', text: `🔊 ${e.caption}` });
-          if (soundRef.current) playCue(e.cue);
+          added.push({ id: nextId(), kind: 'caption', text: `🔊 ${e.caption}`, cue: e.cue });
+          if (soundRef.current) speak(e.cue);
         }
       }
       add(...added);
@@ -374,7 +401,7 @@ export default function Chat() {
               accessibilityRole="switch"
               accessibilityState={{ checked: sound }}
               accessibilityLabel="Pip sound cues"
-              onPress={() => setSound((s) => !s)}>
+              onPress={toggleSound}>
               <Glyph name={sound ? 'volume' : 'volume-off'} size={22} color={sound ? 'accentInk' : 'textSecondary'} />
             </HeaderIconButton>
           }
@@ -489,10 +516,10 @@ export default function Chat() {
               );
             case 'caption':
               return (
-                <View style={styles.caption}>
+                <Pressable style={styles.caption} accessibilityRole="button" accessibilityLabel={`Play voice cue: ${item.text.replace(/^🔊\s*/, '')}`} onPress={() => speak(item.cue)}>
                   <Glyph name="volume" size={14} color="textMuted" />
                   <SignalText variant="meta">{item.text.replace(/^🔊\s*/, '')}</SignalText>
-                </View>
+                </Pressable>
               );
             case 'source':
               return (

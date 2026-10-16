@@ -1,0 +1,31 @@
+{
+  "voiceId": "iHiL14jSTiWXy4nzDtbq",
+  "generatedAt": "2026-10-16T19:28:42.711Z",
+  "cues": {
+    "greeting": {
+      "text": "Hi! I’m Pip. Tell me what’s going on in this room.",
+      "file": "/audio/greeting.mp3",
+      "bytes": 53123
+    },
+    "thinking": {
+      "text": "Let me check what happened here before.",
+      "file": "/audio/thinking.mp3",
+      "bytes": 31390
+    },
+    "solved": {
+      "text": "Yay, that did it!",
+      "file": "/audio/solved.mp3",
+      "bytes": 19687
+    },
+    "escalating": {
+      "text": "Okay, let’s get this reported. I’ll need your OK first.",
+      "file": "/audio/escalating.mp3",
+      "bytes": 51452
+    },
+    "safety": {
+      "text": "Please stop and get staff right away.",
+      "file": "/audio/safety.mp3",
+      "bytes": 35151
+    }
+  }
+}
