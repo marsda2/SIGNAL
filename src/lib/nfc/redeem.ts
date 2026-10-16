@@ -2,6 +2,7 @@
 // Called from POST /api/tap/redeem. GET /t and /api/nfc/inspect never reach `consume`.
 
 import fixtures from '@/data/demo-fixtures.json';
+import { getSpace, spaceIdForTag } from '@/lib/core';
 
 import { configuredTags, nfcMode, sdmKeys } from './config';
 import { extractSunFields, verifySun, type SunResult } from './ntag424';
@@ -13,6 +14,11 @@ const DEMO = { id: fixtures.location.id, name: fixtures.location.name };
 
 export function locationName(locationId: string): { id: string; name: string } {
   return locationId === DEMO.id ? DEMO : { id: locationId, name: locationId };
+}
+
+async function spaceName(locationId: string): Promise<{ id: string; name: string }> {
+  const space = await getSpace(locationId).catch(() => undefined);
+  return space ? { id: space.id, name: space.name } : locationName(locationId);
 }
 
 /** Pure verification, no side effects. Shared by redeem and the operator inspect route. */
@@ -33,7 +39,11 @@ export async function redeemTap(rawUrlOrQuery: string): Promise<TapResponse> {
     };
   }
 
-  const { sun, locationId, factoryKeys } = inspectTap(rawUrlOrQuery);
+  const inspected = inspectTap(rawUrlOrQuery);
+  const { sun, factoryKeys } = inspected;
+  // Env NFC_TAGS wins; otherwise use the chip links an operator set in /admin/spaces (Core).
+  let locationId = inspected.locationId;
+  if (sun.ok && !locationId) locationId = await spaceIdForTag(sun.uid).catch(() => undefined);
   const base = { factoryKeys, replayProtection: replayStore().durable ? ('durable' as const) : ('memory-best-effort' as const) };
 
   if (!sun.ok) {
@@ -52,7 +62,7 @@ export async function redeemTap(rawUrlOrQuery: string): Promise<TapResponse> {
     ...base,
     status: 'verified',
     message: 'NFC scan authenticated. The chip produced a valid message; this does not identify who scanned it.',
-    location: locationName(locationId),
+    location: await spaceName(locationId),
     sessionToken: mintSession(locationId, true),
   };
 }

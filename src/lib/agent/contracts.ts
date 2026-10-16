@@ -95,6 +95,10 @@ export type ChatEvent =
   /** Server-authorized offer. The UI shows a button; nothing happens until the visitor taps it. */
   | { type: 'approval'; actionId: string; kind: 'CREATE_INCIDENT' | 'UPDATE_PORTAL'; label: string; incidentKey?: string; summary?: string; assetId?: string | null }
   | { type: 'cue'; cue: CueName; caption: string }
+  /** Deterministic match against this space's past reports (Core), independent of the model. */
+  | { type: 'seen_before'; incident: IncidentView; agoText: string; days: number; strong: boolean; assetName: string }
+  /** Contact options the visitor can use themselves (tel:/mailto:/link). Nothing is sent by the bot. */
+  | { type: 'escalation'; reason: string; urgent: boolean; options: EscalationOption[] }
   | { type: 'completed'; outcome: string; traceId?: string };
 
 export type IncidentView = {
@@ -106,6 +110,20 @@ export type IncidentView = {
   source: string;
   lastNote?: string;
 };
+
+export type EscalationOption = { kind: 'call' | 'email' | 'link'; label: string; href: string; detail?: string };
+
+/** What the visitor's browser may know about a space (no NFC UIDs, no internal notes). */
+export type PublicSpace = {
+  id: string;
+  name: string;
+  siteName: string;
+  description: string;
+  assets: { id: string; type: string; name: string }[];
+  hasUrgentLine: boolean;
+};
+
+export type FaqPreset = { label: string; message: string; source: 'faq' | 'memory' | 'reports'; detail?: string };
 
 export type CueName = 'greeting' | 'thinking' | 'solved' | 'escalating' | 'safety';
 

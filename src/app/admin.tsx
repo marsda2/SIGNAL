@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 
 import { Badge, Button, Card, text } from '@/components/ui';
-import { space } from '@/constants/tokens';
+import { colors, space } from '@/constants/tokens';
+import { Link } from 'expo-router';
 
 type Health = {
   configured: Record<string, boolean>;
@@ -34,6 +35,9 @@ export default function Admin() {
   return (
     <ScrollView contentContainerStyle={{ padding: space.md, gap: space.md, maxWidth: 720, width: '100%', alignSelf: 'center' }}>
       <Text style={text.h1}>Integrations</Text>
+      <Link href="/admin/spaces" style={{ color: colors.ink, fontWeight: '700', textDecorationLine: 'underline' }}>
+        Manage spaces, FAQs, escalation contacts and NFC chips →
+      </Link>
       {error && <Text style={text.body}>Could not load status: {error}</Text>}
       {health && (
         <Card>

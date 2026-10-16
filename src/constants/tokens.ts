@@ -23,4 +23,5 @@ export const radius = { sm: 12, md: 22, lg: 24 } as const;
 export const space = { xs: 4, sm: 8, md: 16, lg: 24, xl: 40 } as const;
 
 // Fixed demo location until real NFC tag -> location mapping lives in SurrealDB Core.
-export const DEMO_LOCATION = { id: 'room204', name: 'Conference Room 204' } as const;
+// Default demo space (keep in sync with src/data/demo-spaces.json `defaultSpaceId`).
+export const DEMO_LOCATION = { id: 'pitch_area', name: 'Pitch Area' } as const;

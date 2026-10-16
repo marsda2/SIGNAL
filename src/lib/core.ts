@@ -5,6 +5,7 @@
 import { Surreal } from 'surrealdb';
 
 import fixtures from '@/data/demo-fixtures.json';
+import demoSpaces from '@/data/demo-spaces.json';
 import type { IncidentView } from '@/lib/agent/contracts';
 
 export type IncidentStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED';
@@ -59,7 +60,63 @@ export const toView = (i: Incident): IncidentView => ({
 
 const now = () => new Date().toISOString();
 
+export type SpaceAsset = { id: string; type: string; name: string; model?: string; safeTroubleshooting: string[] };
+export type SpaceFaq = { q: string; a: string };
+export type SpaceEscalation = {
+  urgentPhone: string | null;
+  urgentLabel?: string | null;
+  email: string | null;
+  /** signal_demo = our owned /demo/maintenance (Anchor allowed); external = link only; none = no portal. */
+  portal: 'signal_demo' | 'external' | 'none';
+  portalUrl: string | null;
+  hours?: string | null;
+};
+export type Space = {
+  id: string;
+  name: string;
+  siteName: string;
+  description: string;
+  timezone: string;
+  assets: SpaceAsset[];
+  faqs: SpaceFaq[];
+  escalation: SpaceEscalation;
+  nfcTags: string[];
+  updatedAt?: string;
+};
+
+export const DEFAULT_SPACE_ID = demoSpaces.defaultSpaceId;
+
+function fixtureSpaces(): Space[] {
+  return (demoSpaces.spaces as Space[]).map((s) => ({ ...s, updatedAt: now() }));
+}
+
+/** Pitch Area reports use relative dates so "reported N days ago" stays true whenever the demo is reset. */
+function pastReportIncidents(): Incident[] {
+  const day = 24 * 60 * 60 * 1000;
+  return demoSpaces.pastReports.map((r) => {
+    const reported = new Date(Date.now() - r.reportedDaysAgo * day - 3 * 60 * 60 * 1000);
+    const resolved = 'resolvedAfterMinutes' in r && r.resolvedAfterMinutes ? new Date(reported.getTime() + r.resolvedAfterMinutes * 60 * 1000).toISOString() : null;
+    return {
+      key: r.id,
+      locationId: r.spaceId,
+      assetId: r.assetId,
+      status: r.status as IncidentStatus,
+      summary: r.summary,
+      reportedAt: reported.toISOString(),
+      updatedAt: resolved ?? reported.toISOString(),
+      resolvedAt: resolved,
+      resolution: 'resolution' in r ? (r.resolution ?? null) : null,
+      source: 'fixture' as const,
+      notes: 'note' in r && r.note ? [{ at: reported.toISOString(), by: 'operator_demo', text: r.note }] : [],
+    };
+  });
+}
+
 function fixtureIncidents(): Incident[] {
+  return [...room204Incidents(), ...pastReportIncidents()];
+}
+
+function room204Incidents(): Incident[] {
   return fixtures.incidents.map((i) => ({
     key: i.id,
     locationId: fixtures.location.id,
@@ -109,11 +166,16 @@ async function q<T>(sql: string, vars?: Record<string, unknown>): Promise<T[]> {
 }
 
 // In-process fallback (survives hot reloads via globalThis).
-type LocalStore = { incidents: Map<string, Incident>; actions: Map<string, ActionAttempt>; audit: AuditEvent[] };
+type LocalStore = { incidents: Map<string, Incident>; actions: Map<string, ActionAttempt>; audit: AuditEvent[]; spaces: Map<string, Space> };
 const g = globalThis as unknown as { __signalCore?: LocalStore };
 function local(): LocalStore {
   if (!g.__signalCore) {
-    g.__signalCore = { incidents: new Map(fixtureIncidents().map((i) => [i.key, i])), actions: new Map(), audit: [] };
+    g.__signalCore = {
+      incidents: new Map(fixtureIncidents().map((i) => [i.key, i])),
+      actions: new Map(),
+      audit: [],
+      spaces: new Map(fixtureSpaces().map((s) => [s.id, s])),
+    };
   }
   return g.__signalCore;
 }
@@ -127,23 +189,75 @@ async function ensureSeeded() {
   if (!existing[0]?.n) {
     for (const i of fixtureIncidents()) await q('CREATE incident CONTENT $doc', { doc: i });
   }
+  const spaces = await q<{ n: number }>('SELECT count() AS n FROM space GROUP ALL');
+  if (!spaces[0]?.n) {
+    for (const s of fixtureSpaces()) await q('CREATE space CONTENT $doc', { doc: spaceDoc(s) });
+  }
   seeded = true;
 }
 
-/** Operator reset: restores the deterministic fixtures and clears attempts (audit is append-only and kept). */
-export async function resetDemo(): Promise<{ backend: CoreBackend; incidents: number }> {
+/**
+ * Operator reset: restores the deterministic incidents (with fresh relative dates) and clears attempts.
+ * Space profiles edited in the admin portal are kept unless `spaces: true`. Audit is append-only and kept.
+ */
+export async function resetDemo(opts: { spaces?: boolean } = {}): Promise<{ backend: CoreBackend; incidents: number; spacesReset: boolean }> {
   const backend = coreBackend();
+  const incidents = fixtureIncidents();
   if (backend === 'local') {
-    g.__signalCore = undefined;
-    local();
+    const store = local();
+    store.incidents = new Map(incidents.map((i) => [i.key, i]));
+    store.actions = new Map();
+    if (opts.spaces) store.spaces = new Map(fixtureSpaces().map((s) => [s.id, s]));
   } else {
+    await ensureSeeded();
     await q('DELETE incident');
     await q('DELETE action_attempt');
-    for (const i of fixtureIncidents()) await q('CREATE incident CONTENT $doc', { doc: i });
-    seeded = true;
+    for (const i of incidents) await q('CREATE incident CONTENT $doc', { doc: i });
+    if (opts.spaces) {
+      await q('DELETE space');
+      for (const s of fixtureSpaces()) await q('CREATE space CONTENT $doc', { doc: spaceDoc(s) });
+    }
   }
-  await audit({ kind: 'demo.reset', actor: 'operator', subject: 'core', detail: 'fixtures restored' });
-  return { backend, incidents: fixtures.incidents.length };
+  await audit({ kind: 'demo.reset', actor: 'operator', subject: 'core', detail: `fixtures restored${opts.spaces ? ' (incl. spaces)' : ''}` });
+  return { backend, incidents: incidents.length, spacesReset: Boolean(opts.spaces) };
+}
+
+// ---------- spaces (operator-defined context, contacts, NFC links) ----------
+
+// Surreal reserves `id` for the record id, so the space id is stored as `spaceId`.
+const spaceDoc = ({ id, ...rest }: Space) => ({ ...rest, spaceId: id });
+const fromSpaceDoc = ({ spaceId, ...rest }: Omit<Space, 'id'> & { spaceId: string }): Space => ({ ...rest, id: spaceId });
+
+export async function listSpaces(): Promise<Space[]> {
+  if (coreBackend() === 'local') return [...local().spaces.values()];
+  await ensureSeeded();
+  return (await q<Omit<Space, 'id'> & { spaceId: string }>('SELECT * FROM space')).map(fromSpaceDoc);
+}
+
+export async function getSpace(id: string): Promise<Space | undefined> {
+  if (coreBackend() === 'local') return local().spaces.get(id);
+  await ensureSeeded();
+  const row = (await q<Omit<Space, 'id'> & { spaceId: string }>('SELECT * FROM space WHERE spaceId = $id LIMIT 1', { id }))[0];
+  return row ? fromSpaceDoc(row) : undefined;
+}
+
+export async function saveSpace(space: Space, actor = 'operator'): Promise<Space> {
+  const next = { ...space, nfcTags: space.nfcTags.map((t) => t.toUpperCase()), updatedAt: now() };
+  if (coreBackend() === 'local') local().spaces.set(next.id, next);
+  else {
+    await ensureSeeded();
+    const existing = await getSpace(next.id);
+    if (existing) await q('UPDATE space CONTENT $doc WHERE spaceId = $id', { id: next.id, doc: spaceDoc(next) });
+    else await q('CREATE space CONTENT $doc', { doc: spaceDoc(next) });
+  }
+  await audit({ kind: 'space.saved', actor, subject: next.id, detail: `${next.assets.length} assets, ${next.faqs.length} FAQs, ${next.nfcTags.length} NFC tags` });
+  return next;
+}
+
+/** NFC chip UID → space id, from operator-linked tags (env NFC_TAGS is checked first by the NFC module). */
+export async function spaceIdForTag(uid: string): Promise<string | undefined> {
+  const u = uid.toUpperCase();
+  return (await listSpaces()).find((s) => s.nfcTags.includes(u))?.id;
 }
 
 // ---------- incidents ----------

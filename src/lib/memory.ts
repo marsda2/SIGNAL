@@ -1,6 +1,7 @@
 import { AgentMemory } from '@surrealdb/memory';
 
 import fixtures from '@/data/demo-fixtures.json';
+import { listIncidents, listSpaces, type Incident, type Space } from './core';
 import { requireEnv } from './env';
 
 let client: AgentMemory | undefined;
@@ -36,16 +37,50 @@ export function incidentFactText(i: (typeof fixtures.incidents)[number]): string
   return lines.join('\n');
 }
 
-/** Writes the synthetic Room 204 incidents into Agent Memory, labelled so recall can stay location-scoped. */
+/** Same shape as incidentFactText, for any Core incident (Pitch Area reports etc.). */
+export function coreIncidentFactText(i: Incident, spaceName: string, assetName?: string): string {
+  const lines = [
+    `SOURCE: ${i.source === 'fixture' ? `demo-fixtures (synthetic, ticket ${i.key})` : `SIGNAL incident database, ticket ${i.key}`}`,
+    `Location: ${spaceName}`,
+    `Asset: ${i.assetId ?? 'unknown'}${assetName ? ` (${assetName})` : ''}`,
+    `Ticket ${i.key} status: ${i.status}`,
+    `Reported at: ${i.reportedAt}`,
+    `Summary: ${i.summary}`,
+  ];
+  if (i.resolution) lines.push(`Resolution: ${i.resolution}`, `Resolved at: ${i.resolvedAt ?? 'unknown'}`);
+  const note = i.notes.at(-1);
+  if (note) lines.push(`Latest note (${note.at}): ${note.text}`);
+  return lines.join('\n');
+}
+
+export function spaceProfileText(s: Space): string {
+  return [
+    `SOURCE: operator space profile (updated ${s.updatedAt ?? new Date().toISOString()}; supersedes earlier profiles of this space)`,
+    `Location: ${s.name} at ${s.siteName}`,
+    `Description: ${s.description}`,
+    `Equipment: ${s.assets.map((a) => `${a.name} (${a.type})`).join(', ')}`,
+    ...s.faqs.map((f) => `FAQ: ${f.q} → ${f.a}`),
+  ].join('\n');
+}
+
+export async function rememberSpaceProfile(s: Space) {
+  return memory().remember(spaceProfileText(s), { infer: 'none', labels: [locationLabel(s.id), 'kind=space_profile'] });
+}
+
+/** Writes every space profile + every Core incident into Agent Memory, labelled per location. Operator-only. */
 export async function seedDemoMemory() {
   const mem = memory();
-  const results = [];
-  for (const incident of fixtures.incidents) {
-    const res = await mem.remember(incidentFactText(incident), {
-      infer: 'none',
-      labels: [locationLabel(fixtures.location.id), 'demo=true', `ticket=${incident.id}`],
-    });
-    results.push({ ticket: incident.id, ok: Boolean(res) });
+  const results: { ref: string; ok: boolean }[] = [];
+  const spaces = await listSpaces();
+  for (const s of spaces) {
+    results.push({ ref: `profile:${s.id}`, ok: Boolean(await rememberSpaceProfile(s)) });
+    for (const incident of await listIncidents(s.id)) {
+      const res = await mem.remember(coreIncidentFactText(incident, s.name, s.assets.find((a) => a.id === incident.assetId)?.name), {
+        infer: 'none',
+        labels: [locationLabel(s.id), 'demo=true', `ticket=${incident.key}`],
+      });
+      results.push({ ref: incident.key, ok: Boolean(res) });
+    }
   }
   return results;
 }

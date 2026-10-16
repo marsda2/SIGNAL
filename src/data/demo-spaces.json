@@ -1,0 +1,61 @@
+{
+  "demo_only": true,
+  "defaultSpaceId": "pitch_area",
+  "spaces": [
+    {
+      "id": "pitch_area",
+      "name": "Pitch Area",
+      "siteName": "SIGNAL Demo Campus",
+      "description": "Open pitch stage with a podium, two ceiling projectors mirroring the podium input, a shared presenter laptop, guest Wi-Fi and a keypad-locked door to the equipment room.",
+      "timezone": "America/New_York",
+      "assets": [
+        { "id": "projector_left", "type": "projector", "name": "Left projector", "model": "Demo Laser Projector L-1", "safeTroubleshooting": ["Check the podium input switch is on HDMI 1", "On the laptop press Win+P (Mac: Displays → Mirror) and choose Duplicate", "Wait 30 seconds after switching inputs; the projectors re-sync slowly"] },
+        { "id": "projector_right", "type": "projector", "name": "Right projector", "model": "Demo Laser Projector L-1", "safeTroubleshooting": ["Confirm the left projector shows an image first (both mirror the same input)", "Re-seat the HDMI-C cable at the podium, not at the projector", "Do not climb or touch the ceiling unit"] },
+        { "id": "presenter_laptop", "type": "laptop", "name": "Presenter laptop", "model": "Demo Laptop 14", "safeTroubleshooting": ["Log in as Guest (no password)", "The clicker's USB receiver goes in the left USB-A port", "Spare AAA batteries are in the podium drawer"] },
+        { "id": "wifi_pitch", "type": "wifi", "name": "Guest Wi-Fi", "model": "Pitch-Guest / Pitch-Guest-5G", "safeTroubleshooting": ["Join Pitch-Guest-5G for demos (faster)", "The password is on the card next to the door and rotates weekly", "Forget the network and re-join if it says 'incorrect password'"] },
+        { "id": "door_lock", "type": "lock", "name": "Equipment room door lock", "model": "Demo keypad lock K-2", "safeTroubleshooting": ["Never force the door or share codes in chat", "If the keypad doesn't light up, the battery may be low — report it"] }
+      ],
+      "faqs": [
+        { "q": "How do I connect my laptop to the projectors?", "a": "Plug the HDMI-C cable at the podium into your laptop, then press Win+P (Mac: Displays → Mirror) and choose Duplicate. Both projectors mirror the podium input." },
+        { "q": "What's the Wi-Fi network?", "a": "Use Pitch-Guest-5G. The password is on the card next to the door; it changes every week." },
+        { "q": "Can I use the presenter laptop?", "a": "Yes — log in as Guest (no password). The clicker and spare batteries are in the podium drawer." },
+        { "q": "The door keypad isn't working", "a": "Please don't force the door. I can report it to facilities, or you can call the urgent line." },
+        { "q": "Who do I contact for help?", "a": "I can file a ticket in the maintenance portal. For urgent issues, use the urgent phone line shown in the help card." }
+      ],
+      "escalation": {
+        "urgentPhone": "+1 555 0100",
+        "urgentLabel": "Facilities urgent line (demo number)",
+        "email": "facilities@signal-demo.example",
+        "portal": "signal_demo",
+        "portalUrl": null,
+        "hours": "Mon–Fri 8:00–18:00"
+      },
+      "nfcTags": []
+    },
+    {
+      "id": "room204",
+      "name": "Conference Room 204",
+      "siteName": "SIGNAL Demo Campus",
+      "description": "Meeting room with one projector and guest Wi-Fi.",
+      "timezone": "America/New_York",
+      "assets": [
+        { "id": "asset_projector", "type": "projector", "name": "Projector", "model": "Demo Projector P-1", "safeTroubleshooting": ["Check that projector power indicator is on", "Confirm HDMI input matches the connected port", "Try the laptop's external display option without opening or modifying equipment"] },
+        { "id": "asset_router", "type": "wifi", "name": "Guest Wi-Fi", "model": "Demo Wi-Fi AP", "safeTroubleshooting": ["Confirm you selected the named guest network", "Check whether other devices in the room are connected"] }
+      ],
+      "faqs": [
+        { "q": "The projector isn't showing my laptop", "a": "Last time this was fixed by switching the input to HDMI 1." },
+        { "q": "I can't connect to the Wi-Fi", "a": "Make sure you joined the named guest network, not a nearby one." }
+      ],
+      "escalation": { "urgentPhone": null, "urgentLabel": null, "email": "facilities@signal-demo.example", "portal": "signal_demo", "portalUrl": null, "hours": null },
+      "nfcTags": []
+    }
+  ],
+  "pastReports": [
+    { "id": "P-201", "spaceId": "pitch_area", "assetId": "projector_left", "status": "RESOLVED", "reportedDaysAgo": 9, "resolvedAfterMinutes": 12, "summary": "Left projector showed 'No signal' with a guest laptop", "resolution": "Laptop display mode was 'Second screen only'; switched to Duplicate (Win+P)", "resolutionVerifiedBy": "technician_demo" },
+    { "id": "P-202", "spaceId": "pitch_area", "assetId": "projector_right", "status": "OPEN", "reportedDaysAgo": 2, "summary": "Right projector flickers and goes black every few minutes", "note": "Replacement HDMI-C cable ordered" },
+    { "id": "P-203", "spaceId": "pitch_area", "assetId": "presenter_laptop", "status": "RESOLVED", "reportedDaysAgo": 6, "resolvedAfterMinutes": 5, "summary": "Presenter clicker not changing slides", "resolution": "Replaced the AAA battery; USB receiver moved to the left port", "resolutionVerifiedBy": "operator_demo" },
+    { "id": "P-204", "spaceId": "pitch_area", "assetId": "wifi_pitch", "status": "RESOLVED", "reportedDaysAgo": 4, "resolvedAfterMinutes": 20, "summary": "Guest Wi-Fi very slow during demo day", "resolution": "Too many devices on 2.4 GHz; moved presenters to Pitch-Guest-5G", "resolutionVerifiedBy": "operator_demo" },
+    { "id": "P-205", "spaceId": "pitch_area", "assetId": "door_lock", "status": "OPEN", "reportedDaysAgo": 1, "summary": "Equipment room keypad lock not accepting the code", "note": "Facilities informed; keypad shows low-battery blink" },
+    { "id": "P-206", "spaceId": "pitch_area", "assetId": "wifi_pitch", "status": "RESOLVED", "reportedDaysAgo": 12, "resolvedAfterMinutes": 8, "summary": "Wi-Fi password not working", "resolution": "Password had rotated; the new one is on the card next to the door", "resolutionVerifiedBy": "operator_demo" }
+  ]
+}

@@ -1,10 +1,11 @@
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Pip } from '@/components/Pip';
 import { Badge, Card, text } from '@/components/ui';
 import { ChatBubble, Composer, EscalationCard, StatusMark, type StatusKind } from '@/design';
-import type { ChatEvent, CueName, IncidentView, PipState } from '@/lib/agent/contracts';
+import type { ChatEvent, CueName, EscalationOption, FaqPreset, IncidentView, PipState, PublicSpace } from '@/lib/agent/contracts';
 import { colors, DEMO_LOCATION, space } from '@/constants/tokens';
 
 type Approval = Extract<ChatEvent, { type: 'approval' }>;
@@ -18,7 +19,9 @@ type Item =
   | { id: string; kind: 'caption'; text: string }
   | { id: string; kind: 'incident'; incident: IncidentView; relation: string }
   | { id: string; kind: 'approval'; approval: Approval; status: 'offered' | 'working' | 'done' | 'declined' }
-  | { id: string; kind: 'action'; attempt: Attempt };
+  | { id: string; kind: 'action'; attempt: Attempt }
+  | { id: string; kind: 'seen'; incident: IncidentView; agoText: string; assetName: string }
+  | { id: string; kind: 'escalation'; reason: string; urgent: boolean; options: EscalationOption[] };
 
 let counter = 0;
 const nextId = () => String(++counter);
@@ -41,10 +44,43 @@ function playCue(cue: CueName) {
   }
 }
 
+const GREETING_ID = 'greeting';
+
 export default function Chat() {
+  const { session: ref } = useLocalSearchParams<{ session?: string }>();
+  const [room, setRoom] = useState<PublicSpace | null>(null);
+  const [spaceError, setSpaceError] = useState<string | null>(null);
+  const [verified, setVerified] = useState(false);
+  const [presets, setPresets] = useState<FaqPreset[]>([]);
+  const sessionToken = useRef<string | undefined>(undefined);
+  const spaceId = room?.id ?? DEMO_LOCATION.id;
   const [items, setItems] = useState<Item[]>([
-    { id: nextId(), kind: 'pip', text: 'Hey there! I’m Pip. Need a hand with something in this room?' },
+    { id: GREETING_ID, kind: 'pip', text: 'Hey there! I’m Pip. Need a hand with something here?' },
   ]);
+
+  // Which space is this chat for? A signed NFC session token, a space id (/s/pitch_area) or "demo".
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/spaces/resolve?ref=${encodeURIComponent(String(ref ?? 'demo'))}`);
+        const json = (await res.json()) as { space?: PublicSpace; verified?: boolean; sessionToken?: string; error?: string };
+        if (!res.ok || !json.space) throw new Error(json.error ?? `HTTP ${res.status}`);
+        if (cancelled) return;
+        setRoom(json.space);
+        setVerified(Boolean(json.verified));
+        sessionToken.current = json.sessionToken;
+        setItems((prev) => prev.map((i) => (i.id === GREETING_ID ? { ...i, text: `Hey there! I’m Pip. Need a hand with something in ${json.space!.name}?` } : i)));
+        const faq = await fetch(`/api/spaces/${encodeURIComponent(json.space.id)}/faq`).then((r) => r.json() as Promise<{ presets?: FaqPreset[] }>);
+        if (!cancelled) setPresets(faq.presets ?? []);
+      } catch (e) {
+        if (!cancelled) setSpaceError(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ref]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [pip, setPip] = useState<PipState>('idle');
@@ -71,10 +107,10 @@ export default function Chat() {
       .map((i) => ({ role: i.kind === 'user' ? ('visitor' as const) : ('pip' as const), text: i.text }));
   }
 
-  async function send() {
-    const message = input.trim();
+  async function send(preset?: string) {
+    const message = (preset ?? input).trim();
     if (!message || busy) return;
-    setInput('');
+    if (!preset) setInput('');
     setBusy(true);
     setPip('thinking');
     if (!lastProblem.current) lastProblem.current = message;
@@ -83,7 +119,7 @@ export default function Chat() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, locationId: DEMO_LOCATION.id, history: history() }),
+        body: JSON.stringify({ message, locationId: spaceId, sessionToken: sessionToken.current, history: history() }),
       });
       if (!res.ok) throw new Error(`Chat failed (${res.status})`);
       const { events } = (await res.json()) as { events: ChatEvent[] };
@@ -97,6 +133,8 @@ export default function Chat() {
         else if (e.type === 'notice') added.push({ id: nextId(), kind: 'notice', text: e.message });
         else if (e.type === 'incident') added.push({ id: nextId(), kind: 'incident', incident: e.incident, relation: e.relation });
         else if (e.type === 'approval') added.push({ id: nextId(), kind: 'approval', approval: e, status: 'offered' });
+        else if (e.type === 'seen_before') added.push({ id: nextId(), kind: 'seen', incident: e.incident, agoText: e.agoText, assetName: e.assetName });
+        else if (e.type === 'escalation') added.push({ id: nextId(), kind: 'escalation', reason: e.reason, urgent: e.urgent, options: e.options });
         else if (e.type === 'cue') {
           added.push({ id: nextId(), kind: 'caption', text: `🔊 ${e.caption}` });
           if (soundRef.current) playCue(e.cue);
@@ -121,7 +159,7 @@ export default function Chat() {
       await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ locationId: DEMO_LOCATION.id, problem: lastProblem.current || 'unspecified', fix: item.text.slice(0, 600) }),
+        body: JSON.stringify({ locationId: spaceId, problem: lastProblem.current || 'unspecified', fix: item.text.slice(0, 600) }),
       });
     } catch {
       add({ id: nextId(), kind: 'notice', text: 'Could not save your feedback.' });
@@ -136,7 +174,7 @@ export default function Chat() {
         const res = await fetch('/api/incidents', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ actionId: a.actionId, locationId: DEMO_LOCATION.id, summary: a.summary ?? lastProblem.current, assetId: a.assetId ?? null }),
+          body: JSON.stringify({ actionId: a.actionId, locationId: spaceId, summary: a.summary ?? lastProblem.current, assetId: a.assetId ?? null }),
         });
         const json = (await res.json()) as { incident?: IncidentView; error?: string; memoryNote?: string; backend?: string };
         if (!res.ok || !json.incident) throw new Error(json.error ?? `HTTP ${res.status}`);
@@ -149,7 +187,7 @@ export default function Chat() {
         const res = await fetch('/api/actions/portal-update', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ actionId: a.actionId, locationId: DEMO_LOCATION.id, incidentKey: a.incidentKey, summary: a.summary ?? lastProblem.current }),
+          body: JSON.stringify({ actionId: a.actionId, locationId: spaceId, incidentKey: a.incidentKey, summary: a.summary ?? lastProblem.current }),
         });
         const json = (await res.json()) as { attempt?: Attempt; error?: string; message?: string };
         if (!res.ok || !json.attempt) throw new Error(json.message ?? json.error ?? `HTTP ${res.status}`);
@@ -196,8 +234,9 @@ export default function Chat() {
         </View>
         <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
-          <Text style={text.h2}>{DEMO_LOCATION.name}</Text>
-          <Badge label="DEMO / NFC simulation" tone="warn" />
+          <Text style={text.h2}>{room?.name ?? (spaceError ? 'Unknown space' : 'Loading…')}</Text>
+          <Badge label={verified ? 'Secure NFC scan checked' : 'DEMO / NFC simulation'} tone={verified ? 'ok' : 'warn'} />
+          {spaceError ? <Text style={styles.notice}>Could not load this space: {spaceError}</Text> : null}
         </View>
         <Pressable
           accessibilityRole="switch"
@@ -279,14 +318,64 @@ export default function Chat() {
               );
             case 'action':
               return <ActionCard attempt={item.attempt} />;
+            case 'seen':
+              return (
+                <Card style={{ padding: space.sm }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.sm }}>
+                    <Text style={[text.h2, { flex: 1 }]}>Seen before · {item.incident.key}</Text>
+                    <Badge label={item.incident.status} tone={item.incident.status === 'RESOLVED' ? 'ok' : 'warn'} />
+                  </View>
+                  <Text style={text.body}>{item.incident.summary}</Text>
+                  <Text style={text.muted}>
+                    {item.assetName} · reported {item.agoText} · source: incident database
+                  </Text>
+                  {item.incident.lastNote ? <Text style={text.mono}>Latest note: {item.incident.lastNote}</Text> : null}
+                </Card>
+              );
+            case 'escalation':
+              return (
+                <Card style={{ padding: space.sm }}>
+                  <Text style={text.h2}>{item.urgent ? 'Contact staff now' : 'Reach a person'}</Text>
+                  <Text style={text.muted}>{item.reason}. These open on your phone — SIGNAL doesn’t call or email for you.</Text>
+                  {item.options.map((o) => (
+                    <Pressable key={o.href} accessibilityRole="link" accessibilityLabel={`${o.label}${o.detail ? `, ${o.detail}` : ''}`} onPress={() => Linking.openURL(o.href)} style={styles.link}>
+                      <Text style={styles.linkText}>
+                        {o.kind === 'call' ? '📞' : o.kind === 'email' ? '✉️' : '↗'} {o.label}
+                      </Text>
+                      {o.detail ? <Text style={text.mono}>{o.detail}</Text> : null}
+                    </Pressable>
+                  ))}
+                </Card>
+              );
           }
         }}
       />
+      {presets.length > 0 && (
+        <View style={styles.presets}>
+          <Text style={text.muted}>Common here</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
+            {presets.map((p) => (
+              <Pressable
+                key={p.label}
+                accessibilityRole="button"
+                accessibilityLabel={`${p.label}${p.detail ? `, ${p.detail}` : ''}`}
+                disabled={busy}
+                onPress={() => send(p.message)}
+                style={({ pressed }) => [styles.preset, pressed && { opacity: 0.7 }]}>
+                <Text style={styles.presetText} numberOfLines={2}>
+                  {p.label}
+                </Text>
+                {p.detail ? <Text style={text.mono}>{p.source === 'faq' ? 'FAQ' : p.detail}</Text> : <Text style={text.mono}>FAQ</Text>}
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
       <View style={styles.composer}>
         <Composer
           value={input}
           onChangeText={setInput}
-          onSend={send}
+          onSend={() => send()}
           disabled={busy}
           placeholder="The projector isn’t showing my laptop…"
         />
@@ -336,4 +425,7 @@ const styles = StyleSheet.create({
   linkText: { color: colors.ink, fontWeight: '700', textDecorationLine: 'underline' },
   toggle: { minHeight: 44, justifyContent: 'center', paddingHorizontal: space.sm },
   composer: { padding: space.md },
+  presets: { paddingHorizontal: space.md, paddingTop: space.sm, gap: space.xs },
+  preset: { maxWidth: 240, minHeight: 44, paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, justifyContent: 'center' },
+  presetText: { color: colors.ink, fontSize: 14, lineHeight: 19, fontWeight: '600' },
 });
