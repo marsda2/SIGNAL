@@ -1,6 +1,18 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type TextInputInstance,
+} from 'react-native';
 
 import { Pip, PipAvatar } from '@/components/Pip';
 import { Badge, text } from '@/components/ui';
@@ -86,6 +98,26 @@ function presetIcon(p: FaqPreset): GlyphName {
 const presetDetail = (p: FaqPreset) => (p.detail ? (p.source === 'faq' ? 'FAQ' : p.detail) : 'FAQ');
 const incidentKind = (status: IncidentView['status']): StatusKind => (status === 'RESOLVED' ? 'success' : 'attention');
 
+type Asset = PublicSpace['assets'][number];
+
+/** Icon for an "In this space" tile, from the operator's asset type (printer, other and unknown types get `help`). */
+const ASSET_ICON = new Map<string, GlyphName>([
+  ['projector', 'projector'],
+  ['laptop', 'laptop'],
+  ['wifi', 'wifi'],
+  ['lock', 'lock'],
+  ['display', 'monitor'],
+  ['hvac', 'thermometer'],
+]);
+const assetIcon = (type: string): GlyphName => ASSET_ICON.get(type) ?? 'help';
+
+/** What an equipment tile puts in the composer: the start of a sentence the visitor finishes ("The left projector …"). */
+function assetPrompt(name: string) {
+  const subject = name.replace(/^the\s+/i, '');
+  // Lower-case "Left projector" mid-sentence, but keep acronyms such as "HDMI switch" or "TV".
+  return `The ${/^[A-Z][a-z]/.test(subject) ? subject.charAt(0).toLowerCase() + subject.slice(1) : subject} `;
+}
+
 export default function Chat() {
   const router = useRouter();
   // Back only when there is somewhere to go. Read after mount so the server render and hydration match.
@@ -134,6 +166,9 @@ export default function Chat() {
     };
   }, [ref]);
   const [input, setInput] = useState('');
+  const composerRef = useRef<TextInputInstance>(null);
+  /** Equipment tile the visitor tapped; shown as selected while the composer still starts with its sentence. */
+  const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pip, setPip] = useState<PipState>('idle');
   const [sound, setSound] = useState(false);
@@ -274,7 +309,29 @@ export default function Chat() {
     setTimeout(tick, 3000);
   }
 
-  // Before the first message the presets are the welcome grid; after it they shrink to a chip row above the composer.
+  const assets = room?.assets ?? [];
+
+  // Equipment tiles only start the visitor's sentence; nothing is sent until they tap send.
+  // Focus stays inside the tap handler so mobile browsers open the keyboard.
+  function pickAsset(asset: Asset) {
+    const prompt = assetPrompt(asset.name);
+    setInput((prev) => {
+      const previous = assets.map((a) => assetPrompt(a.name)).find((p) => prev.startsWith(p));
+      return prompt + (previous ? prev.slice(previous.length) : prev.trimStart());
+    });
+    setPicked(asset.id);
+    composerRef.current?.focus();
+  }
+
+  function somethingElse() {
+    setPicked(null);
+    // Drop a tile's sentence start the visitor hasn't added to; keep anything they typed.
+    setInput((prev) => (assets.some((a) => prev === assetPrompt(a.name)) ? '' : prev));
+    composerRef.current?.focus();
+  }
+
+  // Before the first message the equipment and presets are the welcome grids; after it the presets shrink to a chip
+  // row above the composer and the equipment grid goes away.
   const started = items.some((i) => i.kind === 'user');
   const back = canGoBack ? () => router.back() : undefined;
 
@@ -332,26 +389,52 @@ export default function Chat() {
         style={styles.list}
         contentContainerStyle={styles.listContent}
         ListFooterComponent={
-          !started && presets.length > 0 ? (
+          !started && (assets.length > 0 || presets.length > 0) ? (
             <View style={styles.welcome}>
-              <View style={styles.sectionHead}>
-                <SignalText variant="section">Common here</SignalText>
-                <SignalText variant="meta">{presets.length} topics</SignalText>
-              </View>
-              <SuggestionTiles columns={2}>
-                {presets.map((p) => (
-                  <SuggestionTile
-                    key={p.label}
-                    align="start"
-                    icon={presetIcon(p)}
-                    label={p.label}
-                    detail={presetDetail(p)}
-                    accessibilityLabel={`${p.label}${p.detail ? `, ${p.detail}` : ''}`}
-                    disabled={busy}
-                    onPress={() => send(p.message)}
-                  />
-                ))}
-              </SuggestionTiles>
+              {assets.length > 0 ? (
+                <View style={styles.section}>
+                  <View style={styles.sectionHead}>
+                    <SignalText variant="section">In this space</SignalText>
+                    <SignalText variant="meta">
+                      {assets.length} {assets.length === 1 ? 'element' : 'elements'}
+                    </SignalText>
+                  </View>
+                  <SuggestionTiles columns={3}>
+                    {assets.map((a) => (
+                      <SuggestionTile
+                        key={a.id}
+                        icon={assetIcon(a.type)}
+                        label={a.name}
+                        selected={picked === a.id && input.startsWith(assetPrompt(a.name))}
+                        onPress={() => pickAsset(a)}
+                      />
+                    ))}
+                  </SuggestionTiles>
+                  <ActionRow icon="dots" title="Something else" detail="Issue with something not listed" onPress={somethingElse} />
+                </View>
+              ) : null}
+              {presets.length > 0 ? (
+                <View style={styles.section}>
+                  <View style={styles.sectionHead}>
+                    <SignalText variant="section">Common here</SignalText>
+                    <SignalText variant="meta">{presets.length} topics</SignalText>
+                  </View>
+                  <SuggestionTiles columns={2}>
+                    {presets.map((p) => (
+                      <SuggestionTile
+                        key={p.label}
+                        align="start"
+                        icon={presetIcon(p)}
+                        label={p.label}
+                        detail={presetDetail(p)}
+                        accessibilityLabel={`${p.label}${p.detail ? `, ${p.detail}` : ''}`}
+                        disabled={busy}
+                        onPress={() => send(p.message)}
+                      />
+                    ))}
+                  </SuggestionTiles>
+                </View>
+              ) : null}
             </View>
           ) : busy ? (
             <View accessibilityLiveRegion="polite">
@@ -529,6 +612,7 @@ export default function Chat() {
           </View>
         ) : null}
         <Composer
+          inputRef={composerRef}
           value={input}
           onChangeText={setInput}
           onSend={() => send()}
@@ -593,7 +677,8 @@ const styles = StyleSheet.create({
   top: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10, gap: 8 },
   list: { flex: 1 },
   listContent: { gap: 12, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 16 },
-  welcome: { gap: 12, marginTop: 6 },
+  welcome: { gap: 24, marginTop: 6 },
+  section: { gap: 12 },
   sectionHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingHorizontal: 2 },
   pipMessage: { gap: 8 },
   underBubble: { paddingLeft: 44 },

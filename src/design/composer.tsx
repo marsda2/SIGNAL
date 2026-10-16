@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import type { Ref } from 'react';
+import { Pressable, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
 
 import { Glyph } from './glyph';
 import { SignalText } from './signal-text';
@@ -21,6 +22,8 @@ export type ComposerProps = {
   placeholder?: string;
   /** Blocks sending (e.g. a request is in flight) without hiding the typed text. */
   disabled?: boolean;
+  /** Lets a screen focus the text field (e.g. "Something else"). Null while recording or processing. */
+  inputRef?: Ref<TextInputInstance>;
 };
 
 /**
@@ -39,6 +42,7 @@ export function Composer({
   elapsed,
   placeholder = copy.inputHint,
   disabled,
+  inputRef,
 }: ComposerProps) {
   const recording = state === 'recording';
   const busy = state === 'processing';
@@ -68,6 +72,7 @@ export function Composer({
           </View>
         ) : (
           <TextInput
+            ref={inputRef}
             accessibilityLabel="Describe the issue"
             placeholder={placeholder}
             placeholderTextColor={palette.textMuted}

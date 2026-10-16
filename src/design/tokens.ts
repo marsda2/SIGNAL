@@ -32,7 +32,7 @@ export const palette = {
   /** Selected tiles, icon wells, pressed states. */
   accentSoft: '#FFE7D8',
   accentLine: '#F9C7A8',
-  /** Label/icon on an orange fill (concept board). ~3.2:1 — set to `text` for 5:1 charcoal labels. */
+  /** Label/icon on an orange fill (concept board). White is ≈3.1:1; '#26221F' gives ≈5:1 charcoal labels. */
   onAccent: '#FFFFFF',
 
   success: '#3A9444',
