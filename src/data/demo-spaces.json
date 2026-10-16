@@ -19,8 +19,8 @@
         { "q": "How do I connect my laptop to the projectors?", "a": "Plug the HDMI-C cable at the podium into your laptop, then press Win+P (Mac: Displays → Mirror) and choose Duplicate. Both projectors mirror the podium input." },
         { "q": "What's the Wi-Fi network?", "a": "Use Pitch-Guest-5G. The password is on the card next to the door; it changes every week." },
         { "q": "Can I use the presenter laptop?", "a": "Yes — log in as Guest (no password). The clicker and spare batteries are in the podium drawer." },
-        { "q": "The door keypad isn't working", "a": "Please don't force the door. I can report it to facilities, or you can call the urgent line." },
-        { "q": "Who do I contact for help?", "a": "I can file a ticket in the maintenance portal. For urgent issues, use the urgent phone line shown in the help card." }
+        { "q": "The door keypad isn't working", "a": "Please don't force the door. With your OK I'll escalate it to facilities for you." },
+        { "q": "Who do I contact for help?", "a": "You don't need to contact anyone yourself: tell me what's wrong and, with your OK, I'll escalate it to the facilities team (portal report, email or an automated call)." }
       ],
       "escalation": {
         "urgentPhone": "+1 555 0100",

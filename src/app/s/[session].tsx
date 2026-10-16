@@ -44,7 +44,7 @@ import { DEMO_LOCATION } from '@/constants/tokens';
 import { visitorHeaders } from '@/lib/visitor-session';
 
 type Approval = Extract<ChatEvent, { type: 'approval' }>;
-type Attempt = { key: string; kind?: string; state: string; liveViewUrl?: string | null; evidence?: string | null; error?: string | null; incidentKey: string };
+type Attempt = { key: string; kind?: string; state: string; liveViewUrl?: string | null; evidence?: string | null; error?: string | null; incidentKey: string; targetHost?: string | null };
 
 type Item =
   | { id: string; kind: 'user'; text: string }
@@ -268,10 +268,18 @@ export default function Chat() {
           { id: nextId(), kind: 'pip', text: `Ticket ${json.incident.key} is saved${json.backend === 'local' ? ' in the local demo store' : ''} with status ${json.incident.status}. Staff haven’t confirmed it yet — I’ll only say help is coming once they do.` },
         );
       } else {
-        const res = await fetch(a.kind === 'MAINTENANCE_CALL' ? '/api/actions/call' : '/api/actions/portal-update', {
+        const endpoint =
+          a.kind === 'MAINTENANCE_CALL'
+            ? '/api/actions/call'
+            : a.kind === 'SUBMIT_EXTERNAL_REPORT'
+              ? '/api/actions/external-report'
+              : a.kind === 'SEND_EMAIL'
+                ? '/api/actions/email'
+                : '/api/actions/portal-update';
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: visitorHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ actionId: a.actionId, locationId: spaceId, incidentKey: a.incidentKey, summary: a.summary ?? lastProblem.current }),
+          body: JSON.stringify({ actionId: a.actionId, locationId: spaceId, incidentKey: a.incidentKey ?? null, assetId: a.assetId ?? null, summary: a.summary ?? lastProblem.current }),
         });
         const json = (await res.json()) as { attempt?: Attempt; error?: string; message?: string };
         if (!res.ok || !json.attempt) throw new Error(json.message ?? json.error ?? `HTTP ${res.status}`);
@@ -293,7 +301,7 @@ export default function Chat() {
         const json = (await res.json()) as { attempt?: Attempt; incident?: IncidentView | null };
         if (json.attempt) {
           patch(itemId, (i) => ({ ...i, attempt: json.attempt! }) as Item);
-          if (['VERIFIED', 'FAILED', 'PENDING_REVIEW'].includes(json.attempt.state)) {
+          if (['VERIFIED', 'FAILED', 'PENDING_REVIEW', 'AGENT_REPORTED'].includes(json.attempt.state)) {
             if (json.attempt.state === 'VERIFIED') {
               setPip('helping');
               if (json.incident) add({ id: nextId(), kind: 'incident', incident: json.incident, relation: 'linked' });
@@ -515,7 +523,15 @@ export default function Chat() {
                 return (
                   <EscalationCard
                     title="Needs your OK"
-                    body="Nothing is sent until you tap."
+                    body={
+                      item.approval.draft
+                        ? `${
+                            item.approval.kind === 'SEND_EMAIL'
+                              ? 'SIGNAL will email the facilities team this report'
+                              : `Anchor will fill the report form on ${item.approval.targetHost} with exactly this`
+                          }:\n\n${item.approval.draft}\n\nNothing is sent until you tap.`
+                        : 'Nothing is sent until you tap.'
+                    }
                     approveLabel={item.approval.label}
                     declineLabel="Not now"
                     requesting={item.status === 'working'}
@@ -640,10 +656,33 @@ const CALL_STATE_COPY: Record<string, string> = {
   PENDING_REVIEW: 'Couldn’t confirm the call — flagged for review.',
 };
 
+// Company's own portal: we can't read it back, so the best outcome is "Anchor says submitted" — never green/verified.
+const EXTERNAL_STATE_COPY: Record<string, string> = {
+  PENDING: 'Preparing the report…',
+  INITIATED: 'Anchor is filling the company’s report form (not confirmed yet)…',
+  AGENT_REPORTED: 'Anchor says the report was submitted. SIGNAL can’t check the company’s site, so this isn’t independently verified.',
+  FAILED: 'The report could not be submitted. Nothing was sent.',
+  PENDING_REVIEW: 'Anchor couldn’t submit the form — flagged for staff review.',
+};
+
+const EMAIL_STATE_COPY: Record<string, string> = {
+  PENDING: 'Sending the email…',
+  AGENT_REPORTED: 'SIGNAL emailed your report to the facilities team. The email was accepted for delivery; nobody has confirmed reading it yet.',
+  FAILED: 'The email could not be sent. Nobody was notified.',
+};
+
 function ActionCard({ attempt }: { attempt: Attempt }) {
   const isCall = attempt.kind === 'MAINTENANCE_CALL';
+  const isExternal = attempt.kind === 'EXTERNAL_REPORT';
+  const isEmail = attempt.kind === 'EMAIL_REPORT';
   const kind: StatusKind =
-    attempt.state === 'VERIFIED' ? 'success' : attempt.state === 'FAILED' ? 'failure' : attempt.state === 'PENDING_REVIEW' ? 'attention' : 'pending';
+    attempt.state === 'VERIFIED'
+      ? 'success'
+      : attempt.state === 'FAILED'
+        ? 'failure'
+        : attempt.state === 'PENDING_REVIEW' || attempt.state === 'AGENT_REPORTED'
+          ? 'attention'
+          : 'pending';
   // Green only for VERIFIED (read back / answered); in-flight states stay neutral.
   const tone: CalloutTone = kind === 'pending' ? 'neutral' : kind;
   const icon: GlyphName = kind === 'success' ? 'check' : kind === 'failure' ? 'x' : kind === 'attention' ? 'alert' : isCall ? 'phone' : 'clock';
@@ -651,9 +690,9 @@ function ActionCard({ attempt }: { attempt: Attempt }) {
     <Callout
       tone={tone}
       icon={icon}
-      title={`${isCall ? 'Maintenance call' : 'Portal update'} · ${attempt.incidentKey}`}
-      aside={<StatusChip kind={kind} label={attempt.state} live={false} />}>
-      <SignalText variant="body">{(isCall ? CALL_STATE_COPY : STATE_COPY)[attempt.state] ?? attempt.state}</SignalText>
+      title={`${isCall ? 'Maintenance call' : isEmail ? 'Email to facilities' : isExternal ? `Report on ${attempt.targetHost ?? 'company portal'}` : 'Portal update'} · ${attempt.incidentKey}`}
+      aside={<StatusChip kind={kind} label={attempt.state === 'AGENT_REPORTED' ? (isEmail ? 'SENT (NOT CONFIRMED)' : 'SUBMITTED (UNVERIFIED)') : attempt.state} live={false} />}>
+      <SignalText variant="body">{(isCall ? CALL_STATE_COPY : isEmail ? EMAIL_STATE_COPY : isExternal ? EXTERNAL_STATE_COPY : STATE_COPY)[attempt.state] ?? attempt.state}</SignalText>
       {attempt.evidence ? (
         <SignalText variant="meta" color="textSecondary" style={styles.note}>
           Evidence: {attempt.evidence}

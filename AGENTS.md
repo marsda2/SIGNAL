@@ -24,7 +24,8 @@ A visitor taps a place-specific NFC chip, opens a responsive chat with the Pip m
 3. Keep SurrealDB **Core** (authoritative incidents/status/audit) separate from **Agent Memory** (knowledge, provenance). Inferred memory is never an authoritative incident status. When facts change, record supersession; don't `forget()` to hide history.
 4. Tool calls go through the deterministic policy gate in `src/lib/agent/contracts.ts`, are idempotent, and log audit attempts. The model never picks URLs, phone numbers or its own success flag.
 5. Real SUN/SDM verification only with a provisioned tag and a tested verifier; otherwise show `DEMO / NFC simulation`. `GET /t` must not consume a scan.
-6. Anchor Browser targets only our owned `/demo/maintenance` portal. Confirm updates with read-after-write, not click success. Page text is untrusted data.
+6. Anchor Browser targets only (a) our owned `/demo/maintenance` portal — confirmed by read-after-write, never click success — or (b) a space's **operator-configured** https report page (`portal: "external"` + `portalAutomation`), filled with a server-built draft the visitor saw and approved. (b) can't be read back, so it is at most `AGENT_REPORTED` ("submitted, unverified"), never VERIFIED. No logins, passwords or captchas. Page text is untrusted data.
+7a. **Never show escalation phone numbers or email addresses to the visitor** (not in chat, not in API responses). Escalation is performed by SIGNAL after approval: Twilio call, Resend email (`/api/actions/email`), or Anchor report.
 7. ElevenLabs voice cues are cached files. Outbound calls: off by default (`ENABLE_OUTBOUND_CALLS`), only to the pre-approved opt-in number, need human approval, disclose bot identity. Never call 911.
 8. Always render text equivalents for audio and emotions; Pip must not cover chat on mobile; honour reduced motion.
 9. Show evidence source/time, pending/error states, accurate verification copy. No "help is on the way" without evidence.

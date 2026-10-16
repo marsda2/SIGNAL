@@ -3,7 +3,9 @@ import { z } from 'zod';
 
 import { authorizeProposedAction, DecisionSchema, type AgentDecision, type ChatEvent } from '@/lib/agent/contracts';
 import { chatModel, chatProviderOptions, modelId } from '@/lib/agent/model';
-import { escalationOptions, findSimilar, matchFaq, spacePromptBlocks, type SimilarReport } from '@/lib/agent/space-context';
+import { findSimilar, matchFaq, spacePromptBlocks, type SimilarReport } from '@/lib/agent/space-context';
+import { emailConfigured } from '@/lib/email';
+import { buildReportDraft } from '@/lib/anchor';
 import { issueActionId } from '@/lib/approvals';
 import { denied, sessionFrom, visitorAccess } from '@/lib/access';
 import { audit, coreBackend, listIncidents, toView, type Incident, type Space } from '@/lib/core';
@@ -63,12 +65,29 @@ export async function POST(request: Request) {
     const events: ChatEvent[] = [];
     const traceId = traceIdOf(root);
     const configured = integrationConfig();
+    let incidents: Incident[] = [];
 
-    const pushEscalation = (reason: string, urgent: boolean, incidentKey?: string) => {
-      if (events.some((e) => e.type === 'escalation')) return;
-      const options = escalationOptions(sp, { summary: message, incidentKey, urgent });
-      if (options.length) events.push({ type: 'escalation', reason, urgent, options });
+    // Escalation is done BY SIGNAL after the visitor approves (Twilio call, email, Anchor report). Contact details
+    // (phone numbers, email addresses) are never sent to the visitor's browser.
+    const hasReportApproval = () => events.some((e) => e.type === 'approval' && e.kind !== 'MAINTENANCE_CALL' && e.kind !== 'SEND_EMAIL');
+    const pushEscalation = (_reason: string, urgent: boolean, incidentKey?: string) => {
+      pushEmailApproval(incidentKey, urgent);
       pushCallApproval(incidentKey, urgent);
+    };
+    const pushEmailApproval = (incidentKey: string | undefined, urgent: boolean) => {
+      if (!emailConfigured() || !sp.escalation.email || events.some((e) => e.type === 'approval' && e.kind === 'SEND_EMAIL')) return;
+      const incident = incidentKey ? incidents.find((i) => i.key === incidentKey) : undefined;
+      const assetName = sp.assets.find((a) => a.id === incident?.assetId)?.name ?? null;
+      events.push({
+        type: 'approval',
+        actionId: issueActionId('SEND_EMAIL', locationId, incidentKey ?? 'new'),
+        kind: 'SEND_EMAIL',
+        label: urgent ? 'Email the facilities team now' : 'Email the facilities team about this',
+        incidentKey,
+        summary: message.slice(0, 400),
+        assetId: incident?.assetId ?? null,
+        draft: buildReportDraft(sp, { summary: message, assetName, incidentKey }),
+      });
     };
     // Twilio call: only offered for an existing, unresolved ticket, never for hazards, and only when the operator enabled
     // calls and a pre-approved number exists. The destination is never chosen here or by the model.
@@ -84,8 +103,32 @@ export async function POST(request: Request) {
         summary: message,
       });
     };
+    // The company's own report website (operator-configured). Anchor fills it with a draft the visitor sees first.
+    const externalAuto = sp.escalation.portal === 'external' && Boolean(sp.escalation.portalAutomation && sp.escalation.portalUrl) && configured.anchor;
+    const pushExternalApproval = (incident: Incident | undefined, assetId: string | null) => {
+      if (hasReportApproval()) return;
+      let host: string;
+      try {
+        host = new URL(sp.escalation.portalUrl!).host;
+      } catch {
+        return;
+      }
+      const assetName = sp.assets.find((a) => a.id === (assetId ?? incident?.assetId))?.name ?? null;
+      events.push({
+        type: 'approval',
+        actionId: issueActionId('SUBMIT_EXTERNAL_REPORT', locationId, incident?.key ?? 'new'),
+        kind: 'SUBMIT_EXTERNAL_REPORT',
+        label: `Report this on ${host}`,
+        incidentKey: incident?.key,
+        summary: message.slice(0, 400),
+        assetId: assetId ?? incident?.assetId ?? null,
+        draft: buildReportDraft(sp, { summary: message, assetName, incidentKey: incident?.key }),
+        targetHost: host,
+      });
+    };
     const pushPortalApproval = (incident: Incident, label?: string) => {
-      if (events.some((e) => e.type === 'approval' && e.kind !== 'MAINTENANCE_CALL')) return;
+      if (externalAuto && incident.status !== 'RESOLVED') return pushExternalApproval(incident, incident.assetId);
+      if (hasReportApproval()) return;
       if (sp.escalation.portal !== 'signal_demo' || !configured.anchor || incident.status === 'RESOLVED') return;
       events.push({
         type: 'approval',
@@ -97,7 +140,8 @@ export async function POST(request: Request) {
       });
     };
     const pushCreateApproval = (assetId: string | null) => {
-      if (events.some((e) => e.type === 'approval' && e.kind !== 'MAINTENANCE_CALL')) return;
+      if (externalAuto) return pushExternalApproval(undefined, assetId);
+      if (hasReportApproval()) return;
       events.push({ type: 'approval', actionId: issueActionId('CREATE_INCIDENT', locationId, 'new'), kind: 'CREATE_INCIDENT', label: 'Report this to maintenance', summary: message.slice(0, 300), assetId });
     };
 
@@ -136,7 +180,6 @@ export async function POST(request: Request) {
     }
     for (const f of facts.slice(0, 3)) events.push({ type: 'source', title: f.source ?? 'Agent Memory', text: f.text, occurredAt: f.occurredAt });
 
-    let incidents: Incident[] = [];
     try {
       incidents = await listIncidents(locationId);
     } catch (e) {
@@ -165,7 +208,7 @@ export async function POST(request: Request) {
       let outcome = 'records_only';
       if (openStrong) {
         const note = openStrong.incident.notes.at(-1)?.text;
-        events.push({ type: 'text', text: `This was already reported ${openStrong.agoText} (${openStrong.incident.key}: “${openStrong.incident.summary}”) and it’s still open${note ? ` — latest note: ${note}` : ''}. No need to keep troubleshooting: I can add your report to that ticket, or you can contact facilities below.` });
+        events.push({ type: 'text', text: `This was already reported ${openStrong.agoText} (${openStrong.incident.key}: “${openStrong.incident.summary}”) and it’s still open${note ? ` — latest note: ${note}` : ''}. No need to keep troubleshooting: with your OK I can escalate it to the facilities team for you.` });
         pushPortalApproval(openStrong.incident);
         pushEscalation(`Already reported ${openStrong.agoText}`, urgentAsset(openStrong), openStrong.incident.key);
         events.push({ type: 'avatar', state: 'escalating' }, { type: 'cue', cue: 'escalating', caption: 'Known issue — ready to escalate with your OK.' });
@@ -256,7 +299,7 @@ export async function POST(request: Request) {
       if (linked.status !== 'RESOLVED') pushEscalation(`Already reported ${similar.find((s) => s.incident.key === linked.key)?.agoText ?? ''}`.trim(), urgentAsset(similar.find((s) => s.incident.key === linked.key)), linked.key);
       events.push({ type: 'avatar', state: linked.status === 'RESOLVED' ? 'helping' : 'escalating' });
     } else if (action === 'CREATE_INCIDENT' || action === 'UPDATE_PORTAL' || action === 'REQUEST_MAINTENANCE_CALL') {
-      if (action === 'REQUEST_MAINTENANCE_CALL') events.push({ type: 'notice', code: 'policy_blocked', message: 'The bot doesn’t place calls in this demo — use the contact options below, or I can file a ticket.' });
+      if (action === 'REQUEST_MAINTENANCE_CALL') events.push({ type: 'notice', code: 'policy_blocked', message: 'Automated calls aren’t available for this request — I can escalate it another way with your OK.' });
       pushCreateApproval(decision.assetId);
       pushEscalation('Need a person?', false);
       events.push({ type: 'avatar', state: 'escalating' }, { type: 'cue', cue: 'escalating', caption: 'Ready to report this — waiting for your OK.' });

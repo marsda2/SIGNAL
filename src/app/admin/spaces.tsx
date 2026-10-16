@@ -7,7 +7,16 @@ import { colors, radius, space } from '@/constants/tokens';
 
 type Asset = { id: string; type: string; name: string; model?: string; safeTroubleshooting: string[] };
 type Faq = { q: string; a: string };
-type Escalation = { urgentPhone: string | null; urgentLabel?: string | null; email: string | null; portal: 'signal_demo' | 'external' | 'none'; portalUrl: string | null; hours?: string | null };
+type Escalation = {
+  urgentPhone: string | null;
+  urgentLabel?: string | null;
+  email: string | null;
+  portal: 'signal_demo' | 'external' | 'none';
+  portalUrl: string | null;
+  portalAutomation?: boolean;
+  portalInstructions?: string | null;
+  hours?: string | null;
+};
 type Space = { id: string; name: string; siteName: string; description: string; timezone: string; assets: Asset[]; faqs: Faq[]; escalation: Escalation; nfcTags: string[]; access?: 'nfc' | 'open'; updatedAt?: string };
 
 const ASSET_TYPES = ['projector', 'laptop', 'wifi', 'lock', 'display', 'printer', 'hvac', 'other'];
@@ -205,7 +214,7 @@ export default function SpacesAdmin() {
               {(
                 [
                   ['signal_demo', 'SIGNAL portal (Anchor files the report)'],
-                  ['external', 'External link only'],
+                  ['external', 'The company’s own portal'],
                   ['none', 'None'],
                 ] as const
               ).map(([v, label]) => (
@@ -215,9 +224,42 @@ export default function SpacesAdmin() {
               ))}
             </View>
             {draft.escalation.portal === 'external' && (
-              <Field label="Portal URL (https, opened by the visitor)" value={draft.escalation.portalUrl ?? ''} autoCapitalize="none" onChangeText={(v) => setEsc('portalUrl', v || null)} />
+              <>
+                <Field label="Report page URL (https)" value={draft.escalation.portalUrl ?? ''} autoCapitalize="none" onChangeText={(v) => setEsc('portalUrl', v || null)} placeholder="https://facilities.example.com/new-request" />
+                <View style={styles.row}>
+                  {(
+                    [
+                      [true, 'Anchor fills the form for the visitor'],
+                      [false, 'Just show the link'],
+                    ] as const
+                  ).map(([v, label]) => (
+                    <Pressable
+                      key={String(v)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: Boolean(draft.escalation.portalAutomation) === v }}
+                      onPress={() => setEsc('portalAutomation', v)}
+                      style={[styles.pill, Boolean(draft.escalation.portalAutomation) === v && styles.chipOn]}>
+                      <Text>{label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {draft.escalation.portalAutomation && (
+                  <>
+                    <Field
+                      label="How to file a report there (for Anchor)"
+                      value={draft.escalation.portalInstructions ?? ''}
+                      multiline
+                      onChangeText={(v) => setEsc('portalInstructions', v || null)}
+                      placeholder={'Click "New request" → choose "Facilities" → put the details in "Description" → Submit.'}
+                    />
+                    <Text style={text.mono}>
+                      The visitor sees the exact report text and approves it first. Anchor only works on this site, never logs in or enters passwords (forms that need a login are flagged for review). The company’s site can’t be read back, so results show as “submitted (unverified)”.
+                    </Text>
+                  </>
+                )}
+              </>
             )}
-            {draft.escalation.portal === 'signal_demo' && <Text style={text.mono}>Anchor only operates SIGNAL’s own /demo/maintenance portal; external portals are links.</Text>}
+            {draft.escalation.portal === 'signal_demo' && <Text style={text.mono}>Anchor updates SIGNAL’s own /demo/maintenance portal and SIGNAL reads the ticket back to verify.</Text>}
           </Card>
 
           <Card>

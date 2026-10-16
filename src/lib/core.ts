@@ -24,10 +24,13 @@ export type Incident = {
   notes: IncidentNote[];
 };
 
-export type ActionState = 'PENDING' | 'INITIATED' | 'VERIFIED' | 'FAILED' | 'PENDING_REVIEW';
+/** AGENT_REPORTED = Anchor says it submitted a third-party form we cannot read back; never shown as verified. */
+export type ActionState = 'PENDING' | 'INITIATED' | 'VERIFIED' | 'FAILED' | 'PENDING_REVIEW' | 'AGENT_REPORTED';
 export type ActionAttempt = {
   key: string;
-  kind: 'PORTAL_UPDATE' | 'CREATE_INCIDENT' | 'MAINTENANCE_CALL';
+  kind: 'PORTAL_UPDATE' | 'CREATE_INCIDENT' | 'MAINTENANCE_CALL' | 'EXTERNAL_REPORT' | 'EMAIL_REPORT';
+  /** EXTERNAL_REPORT: host of the operator-configured portal Anchor was sent to. */
+  targetHost?: string | null;
   callSid?: string | null;
   incidentKey: string;
   locationId: string;
@@ -67,9 +70,13 @@ export type SpaceEscalation = {
   urgentPhone: string | null;
   urgentLabel?: string | null;
   email: string | null;
-  /** signal_demo = our owned /demo/maintenance (Anchor allowed); external = link only; none = no portal. */
+  /** signal_demo = our owned /demo/maintenance (Anchor + read-back); external = the company's own portal; none = no portal. */
   portal: 'signal_demo' | 'external' | 'none';
   portalUrl: string | null;
+  /** external only: let Anchor fill the company's report form (after visitor approval). Otherwise it's just a link. */
+  portalAutomation?: boolean;
+  /** external only: operator's how-to for that form ("Click New request → Facilities → …"). Passed to Anchor verbatim. */
+  portalInstructions?: string | null;
   hours?: string | null;
 };
 export type Space = {
@@ -324,6 +331,18 @@ export async function updateIncidentFromPortal(key: string, patch: { status: Inc
   else await q('UPDATE incident MERGE $patch WHERE key = $key', { key, patch: { status: next.status, updatedAt: at, resolvedAt: next.resolvedAt, notes: next.notes } });
   await audit({ kind: 'portal.update', actor: patch.by, subject: key, detail: `${patch.status}: ${patch.note}` });
   return next;
+}
+
+/** Appends a note without changing status (e.g. "submitted to the company portal — agent-reported"). */
+export async function addIncidentNote(key: string, note: { by: string; text: string }) {
+  const current = await getIncident(key);
+  if (!current) return undefined;
+  const at = now();
+  const notes = [...current.notes, { at, by: note.by, text: note.text }];
+  if (coreBackend() === 'local') local().incidents.set(key, { ...current, notes, updatedAt: at });
+  else await q('UPDATE incident MERGE $patch WHERE key = $key', { key, patch: { notes, updatedAt: at } });
+  await audit({ kind: 'incident.note', actor: note.by, subject: key, detail: note.text });
+  return { ...current, notes, updatedAt: at };
 }
 
 // ---------- action attempts ----------

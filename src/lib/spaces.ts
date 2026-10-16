@@ -38,6 +38,8 @@ export const SpaceSchema = z.object({
       .url({ protocol: /^https$/ })
       .nullable()
       .or(z.literal('').transform(() => null)),
+    portalAutomation: z.boolean().optional(),
+    portalInstructions: z.string().trim().max(1200).nullable().optional(),
     hours: z.string().trim().max(80).nullable().optional(),
   }),
   nfcTags: z.array(z.string().trim().regex(/^[0-9a-fA-F]{14}$/, '7-byte chip UID (14 hex)')).max(20),

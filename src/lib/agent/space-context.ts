@@ -2,8 +2,6 @@
 // Hybrid memory recall returns merely *related* hits, so "this was reported N days ago" needs its own check (AGENTS.md).
 import type { Incident, Space } from '@/lib/core';
 
-import type { EscalationOption } from './contracts';
-
 const STOP = new Set(
   'a an the is are was were be been it its this that i my me we our you your to of in on at for with and or but not no do does did dont doesnt cant cannot wont isnt arent has have had can could should would will just still again any some there here what why how when where who please help hi hello hey thanks thank working work works'.split(' '),
 );
@@ -72,23 +70,8 @@ export function matchFaq(message: string, space: Space) {
   return best?.faq;
 }
 
-/** Human-initiated contact options. The bot never dials or emails by itself. */
-export function escalationOptions(space: Space, ctx: { summary: string; incidentKey?: string; urgent?: boolean }): EscalationOption[] {
-  const e = space.escalation;
-  const options: EscalationOption[] = [];
-  if (e.urgentPhone) {
-    options.push({ kind: 'call', label: ctx.urgent ? 'Call the urgent line now' : 'Call the urgent line', href: `tel:${e.urgentPhone.replace(/[^\d+]/g, '')}`, detail: [e.urgentLabel, e.urgentPhone].filter(Boolean).join(' · ') });
-  }
-  if (e.email) {
-    const subject = `[SIGNAL] ${space.name}${ctx.incidentKey ? ` · ${ctx.incidentKey}` : ''}: ${ctx.summary.slice(0, 80)}`;
-    const body = `Location: ${space.name} (${space.siteName})\n${ctx.incidentKey ? `Related ticket: ${ctx.incidentKey}\n` : ''}Report: ${ctx.summary}\n\nSent from the SIGNAL helper.`;
-    options.push({ kind: 'email', label: 'Email facilities', href: `mailto:${e.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, detail: e.email });
-  }
-  if (e.portal === 'external' && e.portalUrl && /^https:\/\//.test(e.portalUrl)) {
-    options.push({ kind: 'link', label: 'Open the maintenance portal', href: e.portalUrl, detail: 'External portal' });
-  }
-  return options;
-}
+// Escalation contacts (phone, email) are deliberately NOT exposed here: SIGNAL escalates itself after visitor
+// approval (Twilio call, email, Anchor report). See src/app/api/chat+api.ts.
 
 export function spacePromptBlocks(space: Space, similar: SimilarReport[]) {
   const assets = space.assets.map((a) => `${a.id} (${a.type}, ${a.name}${a.model ? `, ${a.model}` : ''}) safe steps: ${a.safeTroubleshooting.join('; ')}`).join('\n');

@@ -76,8 +76,8 @@ export function authorizeProposedAction(
 
 export type ActionOutcome = {
   attemptId: string;
-  kind: 'PORTAL_UPDATE' | 'MAINTENANCE_CALL' | 'CREATE_INCIDENT';
-  state: 'PENDING' | 'INITIATED' | 'VERIFIED' | 'FAILED' | 'PENDING_REVIEW';
+  kind: 'PORTAL_UPDATE' | 'MAINTENANCE_CALL' | 'CREATE_INCIDENT' | 'EXTERNAL_REPORT' | 'EMAIL_REPORT';
+  state: 'PENDING' | 'INITIATED' | 'VERIFIED' | 'FAILED' | 'PENDING_REVIEW' | 'AGENT_REPORTED';
   externalReference?: string;
   observedAt?: string;
   evidence?: string;
@@ -93,7 +93,18 @@ export type ChatEvent =
   | { type: 'notice'; code: 'llm_not_configured' | 'memory_unavailable' | 'core_unavailable' | 'core_local' | 'policy_blocked'; message: string }
   | { type: 'incident'; incident: IncidentView; relation: 'linked' | 'created' }
   /** Server-authorized offer. The UI shows a button; nothing happens until the visitor taps it. */
-  | { type: 'approval'; actionId: string; kind: 'CREATE_INCIDENT' | 'UPDATE_PORTAL' | 'MAINTENANCE_CALL'; label: string; incidentKey?: string; summary?: string; assetId?: string | null }
+  | {
+      type: 'approval';
+      actionId: string;
+      kind: 'CREATE_INCIDENT' | 'UPDATE_PORTAL' | 'MAINTENANCE_CALL' | 'SUBMIT_EXTERNAL_REPORT' | 'SEND_EMAIL';
+      label: string;
+      incidentKey?: string;
+      summary?: string;
+      assetId?: string | null;
+      /** SUBMIT_EXTERNAL_REPORT: the exact text Anchor will type, and where — shown to the visitor before they approve. */
+      draft?: string;
+      targetHost?: string;
+    }
   | { type: 'cue'; cue: CueName; caption: string }
   /** Deterministic match against this space's past reports (Core), independent of the model. */
   | { type: 'seen_before'; incident: IncidentView; agoText: string; days: number; strong: boolean; assetName: string }
