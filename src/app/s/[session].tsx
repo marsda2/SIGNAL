@@ -280,6 +280,14 @@ export default function Chat() {
   async function approve(item: Extract<Item, { kind: 'approval' }>) {
     const a = item.approval;
     patch(item.id, (i) => ({ ...i, status: 'working' }) as Item);
+    const progress: Record<Approval['kind'], string> = {
+      CREATE_INCIDENT: 'I’m saving your approved report as a maintenance ticket.',
+      UPDATE_PORTAL: 'I’m starting the maintenance form update with your approved report. I’ll check that it was saved.',
+      SUBMIT_EXTERNAL_REPORT: 'I’m starting the maintenance form submission with the report you approved. I’ll show the outcome when it’s available.',
+      MAINTENANCE_CALL: 'I’m starting the approved call to maintenance to read out your report. I’ll check the call outcome.',
+      SEND_EMAIL: 'I’m submitting your approved report through the configured email channel. I’ll show whether it was sent or stored as a demo.',
+    };
+    add({ id: nextId(), kind: 'pip', text: progress[a.kind] });
     try {
       if (a.kind === 'CREATE_INCIDENT') {
         const res = await fetch('/api/incidents', {
@@ -329,6 +337,14 @@ export default function Chat() {
         if (json.attempt) {
           patch(itemId, (i) => ({ ...i, attempt: json.attempt! }) as Item);
           if (['VERIFIED', 'FAILED', 'PENDING_REVIEW', 'AGENT_REPORTED'].includes(json.attempt.state)) {
+            if (json.attempt.kind === 'PORTAL_UPDATE') {
+              const result = json.attempt.state === 'VERIFIED'
+                ? `I checked ticket ${json.attempt.incidentKey} in the maintenance database: your report is saved. This confirms the record was updated; staff haven’t confirmed a response yet.`
+                : json.attempt.state === 'FAILED'
+                  ? 'The maintenance form update failed. I haven’t confirmed that your report was saved.'
+                  : 'I couldn’t verify the maintenance form update. It needs a review before I can say your report is saved.';
+              add({ id: nextId(), kind: 'pip', text: result });
+            }
             if (json.attempt.state === 'VERIFIED') {
               setPip('helping');
               if (json.incident) add({ id: nextId(), kind: 'incident', incident: json.incident, relation: 'linked' });

@@ -20,7 +20,7 @@ export default function RootLayout() {
         <Stack.Screen name="t" options={{ title: 'SIGNAL', headerShown: false }} />
         <Stack.Screen name="s/[session]" options={{ title: 'Pip', headerShown: false }} />
         <Stack.Screen name="admin" options={{ title: 'Facilities' }} />
-        <Stack.Screen name="demo/maintenance" options={{ title: 'Maintenance portal (demo)' }} />
+        <Stack.Screen name="demo/maintenance" options={{ title: 'Maintenance desk · SIGNAL', headerShown: false }} />
       </Stack>
     </>
   );
