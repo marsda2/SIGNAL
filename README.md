@@ -54,7 +54,7 @@ curl -X POST http://localhost:8081/api/memory/seed -H "x-demo-secret: <DEMO_OPER
 | `/demo/maintenance` | Read-only synthetic tickets; not yet backed by a DB, so Anchor can't persist/verify an update |
 | SurrealDB Core, incidents, approvals, audit log | Not started |
 | Anchor actions, ElevenLabs cues/calls, Phoenix traces | Keys present / SDKs installed, **no code yet** |
-| Vercel deploy | Config in repo (`vercel.json`, `api/index.js`); **not deployed yet** |
+| Vercel deploy | **Live:** https://signal-three-iota.vercel.app (project `signal`, GitHub-connected; `/api/health`, `/t` verified). Not yet tested on a phone over cellular |
 
 Rule: only show behaviour that actually runs. Seeded/simulated data is labelled.
 

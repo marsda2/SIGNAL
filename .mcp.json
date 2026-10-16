@@ -2,7 +2,7 @@
   "mcpServers": {
     "agent-memory": {
       "type": "http",
-      "url": "${AGENT_MEMORY_ENDPOINT}/mcp",
+      "url": "https://srv1.spectron.aws-usw2.surreal.cloud/mcp",
       "headers": {
         "Authorization": "Bearer ${AGENT_MEMORY_API_KEY}"
       }
